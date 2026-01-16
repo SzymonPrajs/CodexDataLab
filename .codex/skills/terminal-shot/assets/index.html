@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>terminal-shot</title>
+    <link rel="stylesheet" href="/vendor/xterm.css" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #000;
+      }
+      body {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      #terminal {
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="terminal"></div>
+    <script src="/vendor/xterm.js"></script>
+    <script>
+      (function () {
+        window.__terminalShotReady = false;
+
+        const params = new URLSearchParams(window.location.search);
+        const cols = Number(params.get("cols") || "120");
+        const rows = Number(params.get("rows") || "34");
+        const wsPath = params.get("wsPath") || "/ws";
+
+        const terminal = new window.Terminal({ cols, rows, cursorBlink: true });
+        terminal.open(document.getElementById("terminal"));
+        terminal.focus();
+
+        const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}${wsPath}`;
+        const ws = new WebSocket(wsUrl);
+
+        ws.addEventListener("open", () => {
+          ws.send(JSON.stringify({ type: "resize", cols, rows }));
+          window.__terminalShotReady = true;
+        });
+
+        ws.addEventListener("message", (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message.type === "output") terminal.write(message.data);
+            if (message.type === "exit") terminal.write(`\r\n[process exited ${message.code}]\r\n`);
+          } catch {
+            // ignore malformed messages
+          }
+        });
+
+        terminal.onData((data) => {
+          ws.send(JSON.stringify({ type: "input", data }));
+        });
+
+        window.__terminalShotResize = (nextCols, nextRows) => {
+          const c = Number(nextCols);
+          const r = Number(nextRows);
+          if (!Number.isFinite(c) || !Number.isFinite(r)) return;
+          terminal.resize(c, r);
+          ws.send(JSON.stringify({ type: "resize", cols: c, rows: r }));
+        };
+      })();
+    </script>
+  </body>
+</html>
+

@@ -1,0 +1,9 @@
+# Local Codex skill artifacts (keep skills in git; ignore heavy/ephemeral outputs)
+**/node_modules/
+**/.cache/
+**/playwright-report/
+**/test-results/
+**/.DS_Store
+**/*.log
+**/*.tgz
+

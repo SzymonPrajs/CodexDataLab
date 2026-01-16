@@ -1,0 +1,7 @@
+- wait: 800
+- screenshot: "startup.png"
+- wait: 400
+- key: "tab"
+- wait: 200
+- screenshot: "after_tab.png"
+

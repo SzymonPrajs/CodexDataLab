@@ -1,0 +1,9 @@
+{
+  "cols": 120,
+  "rows": 34,
+  "viewport": { "width": 1512, "height": 982 },
+  "outDir": "/tmp/tui-shot",
+  "headless": true,
+  "wsPath": "/ws"
+}
+
