@@ -66,15 +66,21 @@ def create_workspace_skeleton(workspace_root: Path, *, schema_version: int = 0) 
     )
 
 
-def populate_raw_from_fixtures(workspace_root: Path, fixtures: Iterable[Path]) -> None:
-    """Copy fixture files into the workspace raw/ directory (non-destructive)."""
+def populate_raw_from_fixtures(
+    workspace_root: Path, fixtures: Iterable[Path], *, overwrite: bool = False
+) -> None:
+    """Copy fixture files into the workspace raw/ directory.
+
+    By default this is non-destructive (it won't overwrite existing files). Use
+    `overwrite=True` to replace existing fixture files.
+    """
 
     raw_dir = workspace_root / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     for fixture in fixtures:
         destination = raw_dir / fixture.name
-        if destination.exists():
+        if destination.exists() and not overwrite:
             continue
         shutil.copy2(fixture, destination)
 
@@ -84,4 +90,3 @@ def _write_json_if_missing(path: Path, data: object) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
-

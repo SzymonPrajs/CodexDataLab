@@ -1,6 +1,31 @@
-person_id,name,age,country
-1,Alice,34,US
-2,Bob,28,UK
-3,Charlie,45,US
-4,Dana,31,DE
-5,Eve,25,US
+person_id,name,age,country,city,region,signup_date,is_active,plan,income_usd,height_cm,weight_kg,favorite_color,newsletter_opt_in,last_login_date,churn_risk
+1,Alice,34,US,Seattle,WA,2024-01-16,true,free,43750,158,54,red,false,2025-11-28,0.12
+2,Bob,28,UK,London,ENG,2024-01-27,true,pro,45500,161,56,orange,false,2025-11-25,0.19
+3,Charlie,45,US,Austin,TX,2024-02-07,true,enterprise,47250,164,58,black,true,2025-11-22,0.26
+4,Dana,31,DE,Berlin,BE,2024-02-18,true,free,49000,167,60,blue,false,2025-11-19,0.33
+5,Eve,25,US,New York,NY,2024-02-29,false,pro,50750,170,62,red,false,,
+6,Frank,39,CA,Toronto,ON,2024-03-11,true,enterprise,52500,173,64,orange,true,2025-11-13,0.47
+7,Grace,29,US,San Francisco,CA,2024-03-22,true,free,54250,176,66,black,false,2025-11-10,0.54
+8,Heidi,41,FR,Paris,IDF,2024-04-02,true,pro,,179,68,blue,false,2025-11-07,0.61
+9,Ivan,36,US,Chicago,IL,2024-04-13,true,enterprise,57750,182,70,red,true,2025-11-04,0.68
+10,Judy,33,AU,Sydney,NSW,2024-04-24,false,free,59500,185,72,orange,false,,
+11,Ken,27,US,Boston,MA,2024-05-05,true,pro,61250,188,74,black,false,2025-10-29,0.82
+12,Laura,38,US,Denver,CO,2024-05-16,true,enterprise,63000,191,76,blue,true,2025-10-26,0.89
+13,Mallory,30,UK,Manchester,ENG,2024-05-27,true,free,64750,194,78,red,false,2025-10-23,0.06
+14,Niaj,44,DE,Munich,BY,2024-06-07,true,pro,66500,157,80,orange,false,2025-10-20,0.13
+15,Olivia,26,US,Miami,FL,2024-06-18,false,enterprise,68250,160,82,black,true,,
+16,Peggy,35,CA,Vancouver,BC,2024-06-29,true,free,70000,163,84,blue,false,2025-11-28,0.27
+17,Quentin,32,US,Portland,OR,2024-07-10,true,pro,71750,166,86,red,false,2025-11-25,0.34
+18,Rupert,40,FR,Lyon,ARA,2024-07-21,true,enterprise,73500,169,88,orange,true,2025-11-22,0.41
+19,Sybil,28,US,Atlanta,GA,2024-08-01,true,free,,172,52,black,false,2025-11-19,0.48
+20,Trent,37,US,Phoenix,AZ,2024-08-12,false,pro,77000,175,54,blue,false,,
+21,Uma,31,IN,Bengaluru,KA,2024-08-23,true,enterprise,78750,178,56,red,true,2025-11-13,0.62
+22,Victor,43,US,Minneapolis,MN,2024-09-03,true,free,80500,181,58,orange,false,2025-11-10,0.69
+23,Wendy,24,US,Los Angeles,CA,2024-09-14,true,pro,82250,184,60,black,false,2025-11-07,0.76
+24,Xavier,34,ES,Barcelona,CAT,2024-09-25,true,enterprise,84000,187,62,blue,true,2025-11-04,0.83
+25,Yvonne,29,US,Nashville,TN,2024-10-06,false,free,85750,190,64,red,false,,
+26,Zara,27,US,Philadelphia,PA,2024-10-17,true,pro,87500,193,66,orange,false,2025-10-29,0.07
+27,Aaron,42,US,Dallas,TX,2024-10-28,true,enterprise,89250,156,68,black,true,2025-10-26,0.14
+28,Bianca,33,IT,Milan,LOM,2024-11-08,true,free,91000,159,70,blue,false,2025-10-23,0.21
+29,Carlos,36,BR,Sao Paulo,SP,2024-11-19,true,pro,92750,162,72,red,false,2025-10-20,0.28
+30,Deepa,30,SG,Singapore,SG,2024-11-30,false,enterprise,94500,165,74,orange,true,,

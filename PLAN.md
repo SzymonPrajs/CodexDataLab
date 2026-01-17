@@ -44,7 +44,7 @@ Workspaces use a flat structure at the root:
 
 ### Repo-local dev/test workspace
 - The repo keeps a **gitignored** workspace directory for manual development: `.codexdatalab_test_workspace/`.
-- It is (re)generated from committed fixtures via: `python scripts/create_dev_workspace.py`.
+- It is (re)generated from committed fixtures via: `python scripts/create_dev_workspace.py` (use `--reset` to recreate, or `--overwrite-fixtures` to refresh fixture files).
 - Test fixtures live under `tests/fixtures/` and are copied into the workspace `raw/` directory.
 - CI and unit tests must create **temporary workspaces dynamically** (do not rely on the repo-local workspace).
 
