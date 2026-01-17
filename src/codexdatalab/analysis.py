@@ -53,7 +53,8 @@ def categorical_summary(df: pl.DataFrame, *, limit: int = 3) -> dict[str, Any]:
     for name, dtype in df.schema.items():
         if dtype == pl.Utf8 or dtype == pl.Categorical:
             counts = df.select(pl.col(name).value_counts()).unnest(name)
-            counts = counts.sort("counts", descending=True).head(limit)
+            count_col = "counts" if "counts" in counts.columns else "count"
+            counts = counts.sort(count_col, descending=True).head(limit)
             row = {
                 "column": name,
                 "unique": int(df.select(pl.col(name).n_unique()).item()),

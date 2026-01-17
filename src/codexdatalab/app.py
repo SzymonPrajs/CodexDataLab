@@ -251,10 +251,17 @@ class CodexDataLabApp(App):
             )
         cat_stats = categorical_summary(df, limit=3)
         for row in cat_stats.get("rows", []):
-            top_values = ", ".join(
-                f"{item.get(row['column'], item.get('column', ''))}:{item.get('counts', '')}"
-                for item in row.get("top_values", [])
-            )
+            display_parts = []
+            for item in row.get("top_values", []):
+                value = item.get(row["column"])
+                if value is None:
+                    for key in item.keys():
+                        if key not in {"count", "counts"}:
+                            value = item.get(key)
+                            break
+                count_value = item.get("counts", item.get("count", ""))
+                display_parts.append(f"{value}:{count_value}")
+            top_values = ", ".join(display_parts)
             lines.append(f"{row['column']}: unique={row['unique']} top={top_values}")
 
         if self._lineage_visible:

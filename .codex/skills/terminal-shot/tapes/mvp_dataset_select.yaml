@@ -1,0 +1,6 @@
+- wait: 600
+- key: "down"
+- wait: 200
+- key: "enter"
+- wait: 800
+- screenshot: "mvp-dataset-selected.png"
