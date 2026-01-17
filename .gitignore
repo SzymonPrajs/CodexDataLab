@@ -59,5 +59,8 @@ pnpm-debug.log*
 # Textual
 .textual/
 
+# CodexDataLab dev/test workspaces
+.codexdatalab_test_workspace/
+
 # OS files
 .DS_Store

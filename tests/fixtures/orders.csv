@@ -1,0 +1,6 @@
+order_id,person_id,amount,category
+100,1,23.50,books
+101,1,99.90,electronics
+102,2,15.00,books
+103,3,40.00,grocery
+104,5,12.00,grocery
