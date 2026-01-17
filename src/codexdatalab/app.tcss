@@ -46,17 +46,46 @@ ListView > .list--highlight {
     width: 1fr;
 }
 
-#plot {
+#main-tabs {
     height: 1fr;
-    border: round #34d399;
-    background: #08131f;
-    padding: 1 2;
     margin: 0 0 1 0;
+}
+
+#table-body {
+    layout: horizontal;
+    height: 1fr;
+}
+
+#data-table {
+    width: 1fr;
+    height: 1fr;
+    border: round #1f2937;
+}
+
+#stats-panel {
+    width: 32;
+    height: 1fr;
+    border: round #334155;
+    background: #0f172a;
+    padding: 1 1;
+    margin: 0 0 0 1;
+    color: #94a3b8;
 }
 
 #plot-body {
     layout: horizontal;
     height: 1fr;
+}
+
+#plot-controls {
+    width: 32;
+    border: round #334155;
+    background: #0f172a;
+    padding: 1 1;
+}
+
+#plot-meta {
+    color: #94a3b8;
     margin-top: 1;
 }
 
@@ -66,27 +95,12 @@ ListView > .list--highlight {
     border: round #1f2937;
     content-align: center middle;
     color: #94a3b8;
+    margin-left: 1;
 }
 
-#plot-stats {
-    width: 22;
+#plot-list {
     height: 1fr;
-    border: round #334155;
-    background: #0f172a;
-    padding: 1 1;
-    margin: 0 0 0 1;
-    color: #94a3b8;
-    content-align: center middle;
-}
-
-#plot .title {
-    color: #34d399;
-    text-style: bold;
-}
-
-#plot .subtitle,
-#plot .meta {
-    color: #94a3b8;
+    margin-top: 1;
 }
 
 #chat {
@@ -112,6 +126,14 @@ ListView > .list--highlight {
     background: #111827;
     border: tall #1f2937;
     color: #e5e7eb;
+}
+
+#chat-log {
+    height: 1fr;
+    border: round #1f2937;
+    padding: 0 1;
+    margin: 1 0;
+    background: #0b1220;
 }
 
 #menu.focused {

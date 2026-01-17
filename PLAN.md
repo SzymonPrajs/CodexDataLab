@@ -4,6 +4,21 @@ This document is the execution roadmap for building CodexDataLab semi-autonomous
 
 Canonical “what/why” lives in `VISION.md`. This file is “how/when/what first”.
 
+> **Agent note (do not remove):** The checklist below is the authoritative record of MVP completion. Keep it updated so the project state survives context compactions.
+
+## MVP Execution Checklist
+
+- [x] FOUNDATION-0: Workspace kernel + metadata + tool harness
+- [x] MVP-1: Local dataset import (copy/link + provenance)
+- [x] MVP-2: Polars-backed dataset loading + table preview
+- [x] MVP-3: Optional stats tab for a dataset
+- [x] MVP-4: Cleaning transforms (raw → cleaned) with saved code
+- [x] MVP-5: Quick analysis tools + structured results
+- [x] MVP-6: Plotting v1 (TUI previews) + plot repository
+- [x] MVP-7: Chat-with-your-data + answer recording
+- [x] MVP-8: Provenance enforcement + UX affordances
+- [x] MVP-9: Workspace summary (markdown) rendered in TUI
+
 ---
 
 ## Locked decisions (do not re-litigate without updating this doc)

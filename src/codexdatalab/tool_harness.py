@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Any
 
+from .analysis import groupby_count, numeric_summary, schema_and_nulls, value_counts
+from .data_ops import import_dataset, list_datasets, preview_dataset
+from .utils import generate_id, utc_now_iso
 from .workspace import Workspace
 
 
@@ -20,21 +24,33 @@ class ToolHarness:
         return bool(self.confirm(prompt))
 
     def list_datasets(self) -> list[dict[str, Any]]:
-        manifest = self.workspace.load_json(
-            "manifest.json",
-            {"schema_version": 0, "datasets": {}, "transforms": {}},
+        return list_datasets(self.workspace)
+
+    def import_dataset(self, path: str, *, link: bool = False, force_copy: bool = False) -> dict[str, Any]:
+        def prompt(message: str) -> str:
+            if self.confirm is None:
+                raise ValueError("Confirmation required.")
+            allowed = self.confirm(message)
+            return "c" if allowed else "x"
+
+        record = import_dataset(
+            self.workspace,
+            Path(path),
+            link=link,
+            force_copy=force_copy,
+            prompt=prompt if self.confirm else None,
         )
-        datasets = manifest.get("datasets", {})
-        return [datasets[key] for key in sorted(datasets.keys())]
+        return {"dataset_id": record.dataset_id, "path": str(record.path)}
 
-    def import_dataset(self, *_: Any, **__: Any) -> None:
-        raise NotImplementedError("Dataset import is implemented in MVP-1.")
+    def preview_dataset(self, dataset_id: str, *, max_rows: int = 50, max_cols: int = 12) -> Any:
+        return preview_dataset(self.workspace, dataset_id, max_rows=max_rows, max_cols=max_cols)
 
-    def preview_dataset(self, *_: Any, **__: Any) -> None:
-        raise NotImplementedError("Dataset preview is implemented in MVP-2.")
-
-    def dataset_stats(self, *_: Any, **__: Any) -> None:
-        raise NotImplementedError("Dataset stats are implemented in MVP-3.")
+    def dataset_stats(self, dataset_id: str) -> dict[str, Any]:
+        df = preview_dataset(self.workspace, dataset_id, max_rows=1000, max_cols=50)
+        return {
+            "schema": schema_and_nulls(df),
+            "numeric": numeric_summary(df),
+        }
 
     def run_transform(self, *_: Any, **__: Any) -> None:
         raise NotImplementedError("Transform execution is implemented in MVP-4.")
@@ -42,6 +58,24 @@ class ToolHarness:
     def create_plot(self, *_: Any, **__: Any) -> None:
         raise NotImplementedError("Plot creation is implemented in MVP-6.")
 
-    def record_answer(self, *_: Any, **__: Any) -> None:
-        raise NotImplementedError("Answer recording is implemented in MVP-7.")
-
+    def record_answer(
+        self,
+        *,
+        question: str,
+        answer: str,
+        dataset_ids: list[str] | None = None,
+        artifact_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        answers = self.workspace.load_answers()
+        answer_id = generate_id("ans")
+        answers.setdefault("answers", {})[answer_id] = {
+            "id": answer_id,
+            "question": question,
+            "answer": answer,
+            "dataset_ids": dataset_ids or [],
+            "artifact_ids": artifact_ids or [],
+            "created_at": utc_now_iso(),
+        }
+        self.workspace.save_answers(answers)
+        self.workspace.commit("Record answer", paths=[".codexdatalab/qa.json"])
+        return {"answer_id": answer_id}
