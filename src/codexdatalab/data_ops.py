@@ -89,7 +89,9 @@ def import_dataset(
         "imported_at": created_at,
         "import_mode": "link" if link else "copy",
     }
-    datasets[dataset_id].setdefault("sources", []).append(source_entry)
+    sources = datasets[dataset_id].setdefault("sources", [])
+    if not any(entry.get("source") == source_entry["source"] for entry in sources):
+        sources.append(source_entry)
     workspace.save_manifest(manifest)
     workspace.commit(f"Import dataset {dataset_id}", paths=[dest_path.as_posix(), ".codexdatalab/manifest.json"])
 
