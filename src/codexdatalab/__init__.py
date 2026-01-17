@@ -1,4 +1,9 @@
+from importlib.metadata import PackageNotFoundError, version
+
 __all__ = ["__version__"]
 
-__version__ = "0.1.0"
-
+try:
+    __version__ = version("codexdatalab")
+except PackageNotFoundError:
+    # Fallback for source checkouts without installed metadata.
+    __version__ = "0.0.1"
