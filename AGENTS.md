@@ -42,20 +42,6 @@ Use during development to capture deterministic PNG screenshots of the real term
   - Use `--headed` to watch the run live.
   - Tape format is documented in `.codex/skills/terminal-shot/SKILL.md`.
 
-### `git-stats`
-
-Use during development to answer “how many lines changed?” for a commit range or time window by aggregating `git log --numstat`.
-
-- Range:
-  - `python3 .codex/skills/git-stats/scripts/git-stats.py HEAD~20..HEAD`
-- Time window:
-  - `python3 .codex/skills/git-stats/scripts/git-stats.py HEAD --since "2026-01-01" --until "2026-01-31"`
-- Limit to paths:
-  - `python3 .codex/skills/git-stats/scripts/git-stats.py HEAD~50..HEAD -- src/`
-- Reporting:
-  - Use `changed = additions + deletions`.
-  - Merges are excluded by default to avoid double counting (pass `--include-merges` to include them).
-
 ## App Controls (Planned / Reserved)
 
 These key bindings are intended to be implemented for automation later:
