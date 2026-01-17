@@ -25,6 +25,7 @@ permissions:
 
 jobs:
   build-and-release:
+    environment: Release
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -41,6 +42,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
       - name: Create tag
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -56,11 +65,18 @@ jobs:
       - name: Build artifacts
         run: ./.ci/build.sh
 
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: ./.ci/release-notes.sh
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TITLE }}
           prerelease: ${{ env.RELEASE_PRERELEASE }}
+          body_path: release-notes.md
           files: |
             dist/*

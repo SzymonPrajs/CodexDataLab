@@ -1,0 +1,6 @@
+You are drafting GitHub release notes.
+Use the base notes and closed issues below.
+Output markdown with the following sections:
+## Highlights (3-6 bullets, user-facing)
+## What's Changed (preserve PR bullets from base notes if present)
+## Closed Issues (list issues; if none, say 'None.')
