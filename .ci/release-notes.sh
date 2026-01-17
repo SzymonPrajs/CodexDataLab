@@ -15,7 +15,9 @@ fi
 
 tmp_dir="$(mktemp -d)"
 base_notes="$tmp_dir/base.md"
+base_notes_clean="$tmp_dir/base_clean.md"
 issues_md="$tmp_dir/issues.md"
+commits_md="$tmp_dir/commits.md"
 final_notes="${RELEASE_NOTES_PATH:-release-notes.md}"
 
 prev_tag=""
@@ -43,6 +45,16 @@ else
   fi
 fi
 
+# Remove "Full Changelog" lines; we want concrete bullets instead.
+grep -v -i "^Full Changelog:" "$base_notes" > "$base_notes_clean" || true
+
+# Always compute commit summaries for fallback.
+if [[ -n "$prev_tag" ]]; then
+  git log --pretty='- %s (%h)' "$prev_tag..$tag" > "$commits_md"
+else
+  git log --pretty='- %s (%h)' "$tag" > "$commits_md"
+fi
+
 > "$issues_md"
 if command -v gh >/dev/null 2>&1 && [[ -n "$prev_tag" ]]; then
   since="$(git log -1 --format=%cI "$prev_tag")"
@@ -65,8 +77,12 @@ if command -v codex >/dev/null 2>&1 && [[ -n "${OPENAI_API_KEY:-}" ]]; then
     echo "$prompt_header"
     echo
     echo "<base_notes>"
-    cat "$base_notes"
+    cat "$base_notes_clean"
     echo "</base_notes>"
+    echo
+    echo "<commit_summaries>"
+    cat "$commits_md"
+    echo "</commit_summaries>"
     echo
     echo "<closed_issues>"
     cat "$issues_md"
@@ -74,7 +90,10 @@ if command -v codex >/dev/null 2>&1 && [[ -n "${OPENAI_API_KEY:-}" ]]; then
   } | codex exec --color never --output-last-message "$final_notes" -
 else
   {
-    cat "$base_notes"
+    cat "$base_notes_clean"
+    echo
+    echo "## Commit Summaries"
+    cat "$commits_md"
     echo
     echo "## Closed Issues"
     if [[ -s "$issues_md" ]]; then
@@ -83,6 +102,12 @@ else
       echo "None."
     fi
   } > "$final_notes"
+fi
+
+# If the model only wrote a Full Changelog line, replace it with commit summaries.
+if grep -q -i "^Full Changelog:" "$final_notes"; then
+  grep -v -i "^Full Changelog:" "$final_notes" > "$final_notes.tmp" || true
+  mv "$final_notes.tmp" "$final_notes"
 fi
 
 echo "Release notes written to $final_notes"

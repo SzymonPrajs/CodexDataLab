@@ -1,6 +1,10 @@
 You are drafting GitHub release notes.
-Use the base notes and closed issues below.
+Use the base notes, commit summaries, and closed issues below.
 Output markdown with the following sections:
-## Highlights (3-6 bullets, user-facing)
-## What's Changed (preserve PR bullets from base notes if present)
+## Highlights (3-6 bullets, user-facing, concrete changes)
+## What's Changed (use PR bullets from base_notes if present; otherwise use commit_summaries)
 ## Closed Issues (list issues; if none, say 'None.')
+
+Rules:
+- Do NOT include a "Full Changelog" line.
+- If base_notes is empty or generic, build "What's Changed" from commit_summaries.
