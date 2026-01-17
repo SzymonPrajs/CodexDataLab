@@ -1,6 +1,8 @@
 # CodexDataLab
 
-CodexDataLab provides a terminal-based environment for data analysis and visualization, with Codex integrated to support exploratory analysis and rapid iteration.
+CodexDataLab is a terminal-first, human-in-the-loop “chat with your data” workspace for small-to-medium **tabular** datasets. It uses a Textual TUI for fast iteration and integrates Codex to help users ingest data, clean it, explore it, visualize it, and produce reproducible outputs.
+
+See `VISION.md` for the project vision, goals, and roadmap.
 
 ## Quick Start
 

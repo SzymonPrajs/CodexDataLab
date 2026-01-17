@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+## Project Vision
+
+- See `VISION.md` for project intent, workspace conventions, and guiding principles.
+
 ## Project Structure & Module Organization
 
 - Application code lives in `src/codexdatalab/`.
