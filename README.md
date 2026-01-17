@@ -1,6 +1,6 @@
 # CodexDataLab
 
-CodexDataLab is a Textual TUI for a data lab workspace with plot and chat panels.
+CodexDataLab provides a terminal-based environment for data analysis and visualization, with Codex integrated to support exploratory analysis and rapid iteration.
 
 ## Requirements
 
