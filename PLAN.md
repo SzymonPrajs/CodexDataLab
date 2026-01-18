@@ -52,10 +52,11 @@ Workspaces use a flat structure at the root:
 - Relationships must support tracing every artifact back to raw inputs (raw→cleaned, transform→artifact, plot→dataset, Q&A→evidence).
 
 ### Codex integration (how agents run)
-- The app integrates with Codex via the **local Codex CLI app-server** (`codex app-server`) when available, so it can use the user’s existing Codex setup.
-- The app-server is **experimental and may change**; we accept this and track the active protocol version in-repo.
+- The app integrates with Codex via the **local Codex CLI app-server** (`codex app-server`) when available.
+- The app-server is **experimental and may change**; we accept this and track the active protocol schema in-repo.
 - If the `codex` CLI is unavailable or not configured, the app runs in an **offline mode** (manual tools/UI still work; chat agent features are disabled).
-- **Execution routing:** operations that can run locally run directly in the app. All tools are also exposed to Codex via the app-server so agentic actions can invoke the same capabilities.
+- **Execution routing:** operations that can run locally run directly in the app. Codex invokes the same operations via a **skills-based tool protocol** (JSON tool calls) rather than MCP servers.
+- All tool calls and results are **logged** in `.codexdatalab/agent_log.jsonl` for debugging.
 
 ### Workspace versioning
 - Workspaces are **git-backed by default**:
@@ -227,7 +228,10 @@ Route all user-facing actions through the app-server/Codex tool layer and remove
   - transforms
   - plot creation
   - answer recording
-- TUI/Chat actions call the tool harness instead of CLI commands
+- Tool protocol is **skills-based** (Codex outputs JSON tool calls; app validates + executes)
+- Skill file stored under `~/.codexdatalab/codex/skills/codexdatalab-tools/SKILL.md` (auto-generated if missing)
+- TUI/Chat actions call the shared tool layer (same code path as Codex)
+- Tool requests/results are logged for debugging
 - CLI commands other than `init` are removed or made internal-only (not user-facing)
 
 **Definition of done**

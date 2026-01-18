@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from textual.app import App, ComposeResult
+from typing import Any
 from textual.containers import Horizontal, Vertical
 from textual.widgets import (
     Button,
@@ -32,6 +33,7 @@ from .plot_ops import create_plot_definition, list_plots, load_plot_definition
 from .plotting import PlotDefinition, render_plot
 from .summary_ops import generate_summary_markdown
 from .tool_harness import ToolHarness
+from .tool_registry import ToolRegistry
 import json
 
 from .utils import generate_id, utc_now_iso
@@ -56,6 +58,7 @@ class CodexDataLabApp(App):
         super().__init__()
         self.workspace = workspace
         self.tool_harness = ToolHarness(workspace)
+        self.tool_registry = ToolRegistry(self.tool_harness)
         self.codex_client = CodexAppServerClient(
             workspace,
             client_version=self._get_app_version(),
@@ -523,14 +526,31 @@ class CodexDataLabApp(App):
     def _ask_codex(self, message: str, *, dataset_id: str | None = None) -> tuple[str, str | None]:
         if not self._codex_ready:
             return ("Codex is not available.", None)
-        context = ""
+        tool_context = self.tool_registry.format_for_prompt()
         if dataset_id:
-            context = f"Current dataset id: {dataset_id}\n"
+            tool_context = f"{tool_context}\nSelected dataset id: {dataset_id}"
         try:
-            result = self.codex_client.send_message(context + message)
-            return (result.text or "No response.", None)
+            response = self.codex_client.run_tool_loop(
+                message,
+                tool_context=tool_context,
+                execute_tool=self._execute_tool,
+            )
+            return (response or "No response.", None)
         except Exception as exc:
             return (f"Codex error: {exc}", None)
+
+    def _execute_tool(self, name: str, arguments: dict) -> dict[str, Any]:
+        result = self.tool_registry.call(name, arguments)
+        if result.effects:
+            if "datasets" in result.effects:
+                self.call_from_thread(self._refresh_dataset_list)
+            if "plots" in result.effects:
+                self.call_from_thread(self._refresh_plot_list)
+        return {
+            "ok": result.ok,
+            "result": result.result,
+            "error": result.error,
+        }
 
     def _save_result_artifact(self, kind: str, payload: dict) -> str:
         artifact_id = generate_id("res")

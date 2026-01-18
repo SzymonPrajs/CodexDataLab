@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -9,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from .agent_log import log_event
+from .codex_home import ensure_codex_home
+from .skill_store import SKILL_NAME, ensure_skill_file
 from .workspace import Workspace
 
 
@@ -41,10 +45,30 @@ class CodexAppServerClient:
         self._active_turn_done = threading.Event()
         self._pending_turn = False
         self._thread_id: str | None = None
+        self._skill_path: Path | None = None
 
     def start(self) -> bool:
         if self._process:
             return True
+        codex_home = ensure_codex_home()
+        if codex_home.error:
+            log_event(
+                self.workspace,
+                "codex_home_error",
+                {"path": str(codex_home.path), "error": codex_home.error},
+            )
+        else:
+            log_event(
+                self.workspace,
+                "codex_home_ready",
+                {
+                    "path": str(codex_home.path),
+                    "auth_present": codex_home.auth_present,
+                    "auth_copied": codex_home.auth_copied,
+                },
+            )
+        env = os.environ.copy()
+        env["CODEX_HOME"] = str(codex_home.path)
         try:
             self._process = subprocess.Popen(
                 ["codex", "app-server"],
@@ -52,6 +76,7 @@ class CodexAppServerClient:
                 stdout=subprocess.PIPE,
                 stderr=sys.stderr,
                 text=True,
+                env=env,
             )
         except FileNotFoundError:
             return False
@@ -63,7 +88,6 @@ class CodexAppServerClient:
         self._reader_thread.start()
 
         self._initialize()
-        self._ensure_mcp_server()
         return True
 
     def stop(self) -> None:
@@ -73,30 +97,74 @@ class CodexAppServerClient:
         self._process = None
 
     def send_message(self, text: str) -> TurnResult:
+        return self._send_turn(
+            [{"type": "text", "text": text}],
+            output_schema=None,
+        )
+
+    def run_tool_loop(
+        self,
+        user_message: str,
+        *,
+        tool_context: str,
+        execute_tool: Callable[[str, dict[str, Any]], dict[str, Any]],
+        max_steps: int = 6,
+    ) -> str:
         self._ensure_thread()
         if self._thread_id is None:
             raise RuntimeError("Codex thread not initialized.")
 
-        self._active_turn_text = []
-        self._active_turn_done.clear()
-        params = {
-            "threadId": self._thread_id,
-            "input": [{"type": "text", "text": text}],
-        }
-        self._pending_turn = True
-        self._active_turn_id = None
-        response = self._send_request("turn/start", params)
-        turn = response.get("turn", {})
-        turn_id = turn.get("id", "")
-        if not turn_id:
-            raise RuntimeError("Codex did not return a turn id.")
+        self._ensure_skill_file(TOOL_PROTOCOL)
+        log_event(self.workspace, "user_message", {"text": user_message})
 
-        self._active_turn_id = turn_id
-        self._pending_turn = False
-        if not self._active_turn_done.wait(timeout=120):
-            raise RuntimeError("Codex response timed out.")
-        message = "".join(self._active_turn_text).strip()
-        return TurnResult(text=message, turn_id=turn_id)
+        prompt = f"{tool_context}\nUser: {user_message}"
+        input_items = self._build_input_items(prompt, include_skill=True)
+
+        for _ in range(max_steps):
+            turn = self._send_turn(input_items, output_schema=TOOL_RESPONSE_SCHEMA)
+            raw = turn.text.strip()
+            log_event(self.workspace, "codex_response_raw", {"text": raw})
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                error = "Codex response was not valid JSON."
+                log_event(self.workspace, "tool_protocol_error", {"error": error, "text": raw})
+                return error
+
+            if payload.get("type") == "final":
+                message = payload.get("message", "")
+                log_event(self.workspace, "codex_final", {"message": message})
+                return message or "No response."
+            if payload.get("type") != "tool_call":
+                error = "Invalid response type; expected tool_call or final."
+                log_event(self.workspace, "tool_protocol_error", {"error": error, "payload": payload})
+                return error
+
+            tool_name = payload.get("tool")
+            arguments = payload.get("arguments")
+            if not tool_name or not isinstance(arguments, dict):
+                error = "Tool call missing tool name or arguments."
+                log_event(self.workspace, "tool_protocol_error", {"error": error, "payload": payload})
+                return error
+
+            log_event(
+                self.workspace,
+                "tool_call",
+                {"tool": tool_name, "arguments": arguments},
+            )
+            result = execute_tool(tool_name, arguments)
+            log_event(self.workspace, "tool_result", result)
+
+            tool_result_payload = {
+                "type": "tool_result",
+                "tool": tool_name,
+                "ok": result.get("ok"),
+                "result": result.get("result"),
+                "error": result.get("error"),
+            }
+            input_items = [{"type": "text", "text": json.dumps(tool_result_payload)}]
+
+        return "Tool loop exceeded max steps."
 
     def _initialize(self) -> None:
         params = {
@@ -135,25 +203,52 @@ class CodexAppServerClient:
         if self._thread_id:
             self.workspace.update_ui_state("codex_thread_id", self._thread_id)
 
-    def _ensure_mcp_server(self) -> None:
-        command = sys.executable
-        args = ["-m", "codexdatalab.mcp_server", "--workspace", str(self.workspace.root)]
-        value = {
-            "command": command,
-            "args": args,
-            "cwd": str(self.workspace.root),
-            "enabled": True,
+    def _ensure_skill_file(self, tool_protocol: str) -> None:
+        if self._skill_path is None:
+            self._skill_path = ensure_skill_file(tool_protocol)
+
+    def _build_input_items(self, text: str, *, include_skill: bool) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        if include_skill and self._skill_path is not None:
+            items.append(
+                {
+                    "type": "skill",
+                    "name": SKILL_NAME,
+                    "path": str(self._skill_path),
+                }
+            )
+        return items
+
+    def _send_turn(
+        self, input_items: list[dict[str, Any]], *, output_schema: dict[str, Any] | None
+    ) -> TurnResult:
+        self._ensure_thread()
+        if self._thread_id is None:
+            raise RuntimeError("Codex thread not initialized.")
+
+        self._active_turn_text = []
+        self._active_turn_done.clear()
+        params: dict[str, Any] = {
+            "threadId": self._thread_id,
+            "input": input_items,
         }
-        params = {
-            "keyPath": "mcp_servers.codexdatalab",
-            "value": value,
-            "mergeStrategy": "upsert",
-        }
-        try:
-            self._send_request("config/value/write", params)
-            self._send_request("config/mcpServer/reload", {})
-        except Exception:
-            return
+        if output_schema is not None:
+            params["outputSchema"] = output_schema
+
+        self._pending_turn = True
+        self._active_turn_id = None
+        response = self._send_request("turn/start", params)
+        turn = response.get("turn", {})
+        turn_id = turn.get("id", "")
+        if not turn_id:
+            raise RuntimeError("Codex did not return a turn id.")
+
+        self._active_turn_id = turn_id
+        self._pending_turn = False
+        if not self._active_turn_done.wait(timeout=120):
+            raise RuntimeError("Codex response timed out.")
+        message = "".join(self._active_turn_text).strip()
+        return TurnResult(text=message, turn_id=turn_id)
 
     def _send_request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         request_id = self._next_request_id()
@@ -249,10 +344,28 @@ class CodexAppServerClient:
 
 def _default_instructions(workspace_root: Path) -> str:
     return (
-        "You are Codex for CodexDataLab. Use the codexdatalab MCP tools to operate on "
-        "datasets and results in this workspace. Prefer MCP tools over shell commands. "
+        "You are Codex for CodexDataLab. Use the CodexDataLab tool protocol to operate on "
+        "datasets and results in this workspace. Prefer tools over shell commands. "
         "For web data discovery, use the web search tool to find dataset URLs, then call "
-        "codexdatalab.fetch_url to download into raw/. If a domain is blocked, call "
-        "codexdatalab.add_allowed_domain after asking the user for confirmation. "
+        "codexdatalab.fetch_url to download into raw/. If a domain is blocked, ask the user "
+        "and then call codexdatalab.add_allowed_domain. "
         f"Workspace root: {workspace_root}."
     )
+
+
+TOOL_PROTOCOL = (
+    "Respond with a single JSON object. Use type=tool_call to invoke tools, "
+    "and type=final with a message when done. Do not include extra text."
+)
+
+TOOL_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "type": {"type": "string", "enum": ["tool_call", "final"]},
+        "tool": {"type": "string"},
+        "arguments": {"type": "object"},
+        "message": {"type": "string"},
+    },
+    "required": ["type"],
+    "additionalProperties": False,
+}
