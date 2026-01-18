@@ -9,6 +9,7 @@ Canonical “what/why” lives in `VISION.md`. This file is “how/when/what fir
 ## MVP Execution Checklist
 
 - [x] FOUNDATION-0: Workspace kernel + metadata + tool harness
+- [ ] MVP-1A: App-server + Codex integration (next deliverable)
 - [x] MVP-1: Local dataset import (copy/link + provenance)
 - [x] MVP-2: Polars-backed dataset loading + table preview
 - [x] MVP-3: Optional stats tab for a dataset
@@ -26,6 +27,9 @@ Canonical “what/why” lives in `VISION.md`. This file is “how/when/what fir
 ### Canonical docs
 - **Project definition**: `VISION.md` is the canonical source of product intent and operating principles; it is linked from `README.md` and `AGENTS.md`.
 
+### CLI surface
+- **Only** `codexdatalab init` is a supported CLI command. All other actions happen via app-server tools surfaced through chat or the TUI.
+
 ### Workspace layout (flat)
 Workspaces use a flat structure at the root:
 - `raw/` — imported source data (snapshots by default)
@@ -39,7 +43,7 @@ Workspaces use a flat structure at the root:
 ### Data ingestion defaults
 - **Copy-by-default** into `raw/`.
 - If the file exceeds a configurable max-copy size, **prompt**: Link / Copy anyway (confirm) / Cancel.
-- Support explicit CLI overrides: `--link`, `--force-copy`.
+- Support explicit tool options: `link`, `force_copy`.
 - **Global settings** live in `~/.codexdatalab/` and include at least the max-copy size.
 - Always record provenance (original path/URL) and content hashes in workspace metadata.
 
@@ -48,8 +52,10 @@ Workspaces use a flat structure at the root:
 - Relationships must support tracing every artifact back to raw inputs (raw→cleaned, transform→artifact, plot→dataset, Q&A→evidence).
 
 ### Codex integration (how agents run)
-- The app integrates with Codex via the **local Codex CLI** (`codex exec`) when available, so it can use the user’s existing Codex setup.
+- The app integrates with Codex via the **local Codex CLI app-server** (`codex app-server`) when available, so it can use the user’s existing Codex setup.
+- The app-server is **experimental and may change**; we accept this and track the active protocol version in-repo.
 - If the `codex` CLI is unavailable or not configured, the app runs in an **offline mode** (manual tools/UI still work; chat agent features are disabled).
+- **Execution routing:** operations that can run locally run directly in the app. All tools are also exposed to Codex via the app-server so agentic actions can invoke the same capabilities.
 
 ### Workspace versioning
 - Workspaces are **git-backed by default**:
@@ -204,6 +210,30 @@ Create a stable workspace core that future PRs can build on without reworking fu
 
 All MVP deliverables assume FOUNDATION-0 is merged. Each deliverable should land as an independent PR, with dependencies explicitly listed.
 
+### MVP-1A: App-server + Codex integration (must be next)
+
+**Goal**
+Route all user-facing actions through the app-server/Codex tool layer and remove CLI features beyond `init`.
+
+**Dependencies**
+- FOUNDATION-0 (tool harness scaffold)
+
+**Includes**
+- App-server integration via `codex app-server` (local Codex CLI)
+- Generate and store the app-server JSON schema (`codex app-server generate-json-schema`) to lock protocol expectations.
+- A stable “tool call” interface so chat + TUI can call:
+  - list/import datasets
+  - preview/statistics
+  - transforms
+  - plot creation
+  - answer recording
+- TUI/Chat actions call the tool harness instead of CLI commands
+- CLI commands other than `init` are removed or made internal-only (not user-facing)
+
+**Definition of done**
+- A dataset can be imported and previewed via a tool call (from chat/TUI) without using CLI commands.
+- The Codex app-server path is the default when online; offline mode continues to work with local tools.
+
 ### MVP-1: Local dataset import (copy/link + provenance)
 
 **Goal**
@@ -213,10 +243,10 @@ Import local CSV/Parquet files into `raw/` with reproducible metadata.
 - FOUNDATION-0 (settings + metadata + git helpers)
 
 **Includes**
-- CLI command: `codexdatalab import <path>`
+- App-server tool: import local dataset
   - copies to `raw/` by default
   - if file > `max_copy_bytes`: prompt Link / Copy anyway / Cancel
-  - flags: `--link`, `--force-copy`
+  - tool options: `link`, `force_copy`
 - Deterministic naming for imported raw files (e.g., `raw/<dataset_id>.<ext>`) so re-imports can reuse the same bytes.
 - Record in `.codexdatalab/manifest.json`:
   - dataset ID (content-addressed), local path, hash, size
@@ -418,9 +448,9 @@ Let Codex find candidate datasets on the web and download them into `raw/` with 
 - MVP-1 (import/provenance patterns)
 
 **Includes**
-- Explicit user command (no silent web browsing):
-  - `codexdatalab fetch <query|url>`
-- Curated sources / allowlist (configurable)
+- App-server tool (no silent web browsing) that uses Codex web search + download
+- No hardcoded data sources; Codex selects candidates based on the user request
+- Allowlist is enforced at download time (configurable)
 - Download into `raw/` with:
   - source URL, retrieval time, content hash, license/provenance notes if available
 - Optional: dataset “receipt” artifact under `results/` summarizing source and terms
@@ -473,7 +503,7 @@ Generate a polished Jupyter notebook that reproduces the analysis with narrative
 - MVP-4 (transforms), MVP-6 (plots), MVP-7 (Q&A recording)
 
 **Includes**
-- `codexdatalab report` command that creates `reports/<report_id>.ipynb`
+- App-server tool (and TUI action) that creates `reports/<report_id>.ipynb`
 - Notebook contains:
   - data loading (from `data/` and/or `raw/` with transforms)
   - key stats + samples

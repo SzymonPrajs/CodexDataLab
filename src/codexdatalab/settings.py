@@ -9,6 +9,7 @@ SETTINGS_DIRNAME = ".codexdatalab"
 SETTINGS_FILENAME = "settings.json"
 SCHEMA_VERSION = 0
 DEFAULT_MAX_COPY_BYTES = 50 * 1024 * 1024  # 50 MB
+DEFAULT_ALLOWED_DOMAINS: list[str] = []
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class Settings:
     max_copy_bytes: int
     offline_mode: bool
     prompt_on_large_file: bool
+    allowed_domains: list[str]
     schema_version: int = SCHEMA_VERSION
 
     @classmethod
@@ -24,6 +26,7 @@ class Settings:
             max_copy_bytes=int(data.get("max_copy_bytes", DEFAULT_MAX_COPY_BYTES)),
             offline_mode=bool(data.get("offline_mode", False)),
             prompt_on_large_file=bool(data.get("prompt_on_large_file", True)),
+            allowed_domains=list(data.get("allowed_domains", DEFAULT_ALLOWED_DOMAINS)),
             schema_version=int(data.get("schema_version", SCHEMA_VERSION)),
         )
 
@@ -33,6 +36,7 @@ class Settings:
             "max_copy_bytes": self.max_copy_bytes,
             "offline_mode": self.offline_mode,
             "prompt_on_large_file": self.prompt_on_large_file,
+            "allowed_domains": self.allowed_domains,
         }
 
 
@@ -51,6 +55,7 @@ def load_settings() -> Settings:
             max_copy_bytes=DEFAULT_MAX_COPY_BYTES,
             offline_mode=False,
             prompt_on_large_file=True,
+            allowed_domains=DEFAULT_ALLOWED_DOMAINS,
         )
         save_settings(settings)
         return settings
@@ -68,4 +73,3 @@ def save_settings(settings: Settings) -> None:
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings.to_dict(), indent=2, sort_keys=True) + "\n")
-

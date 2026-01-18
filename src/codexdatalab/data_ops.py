@@ -27,6 +27,9 @@ def import_dataset(
     link: bool = False,
     force_copy: bool = False,
     prompt: PromptCallback | None = None,
+    source_label: str | None = None,
+    import_mode: str | None = None,
+    display_name: str | None = None,
 ) -> DatasetRecord:
     source_path = source_path.expanduser().resolve()
     if not source_path.exists():
@@ -81,13 +84,13 @@ def import_dataset(
             "size_bytes": size_bytes,
             "sources": [],
             "created_at": created_at,
-            "name": source_path.name,
+            "name": display_name or source_path.name,
         }
 
     source_entry = {
-        "source": str(source_path),
+        "source": source_label or str(source_path),
         "imported_at": created_at,
-        "import_mode": "link" if link else "copy",
+        "import_mode": import_mode or ("link" if link else "copy"),
     }
     sources = datasets[dataset_id].setdefault("sources", [])
     if not any(entry.get("source") == source_entry["source"] for entry in sources):
