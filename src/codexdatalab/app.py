@@ -26,6 +26,7 @@ from .analysis import (
     schema_and_nulls,
     value_counts,
 )
+from .codex_app_server import CodexAppServerClient
 from .data_ops import list_datasets, preview_dataset
 from .plot_ops import create_plot_definition, list_plots, load_plot_definition
 from .plotting import PlotDefinition, render_plot
@@ -55,12 +56,25 @@ class CodexDataLabApp(App):
         super().__init__()
         self.workspace = workspace
         self.tool_harness = ToolHarness(workspace)
+        self.codex_client = CodexAppServerClient(
+            workspace,
+            client_version=self._get_app_version(),
+        )
         self.sub_title = str(workspace.root)
         state = self.workspace.load_state()
         self._help_visible = bool(state.get("ui", {}).get("help_visible", True))
         self._stats_visible = bool(state.get("ui", {}).get("stats_visible", True))
         self._lineage_visible = bool(state.get("ui", {}).get("lineage_visible", False))
         self._selected_dataset_id: str | None = None
+        self._codex_ready = False
+
+    def _get_app_version(self) -> str:
+        try:
+            from . import __version__
+
+            return __version__
+        except Exception:
+            return "0.0.0"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -126,6 +140,22 @@ class CodexDataLabApp(App):
         self._apply_stats_visibility()
         self._load_summary()
         self._set_status(f"Workspace loaded: {self.workspace.root}")
+        if self.workspace.settings.offline_mode:
+            self._set_status("Offline mode enabled; Codex disabled.")
+        else:
+            self._set_status("Starting Codex app-server...")
+            self.run_worker(self._start_codex, exclusive=True, thread=True)
+
+    def on_shutdown(self) -> None:
+        self.codex_client.stop()
+
+    def _start_codex(self) -> None:
+        ready = self.codex_client.start()
+        self._codex_ready = ready
+        if ready:
+            self.call_from_thread(self._set_status, "Codex connected.")
+        else:
+            self.call_from_thread(self._set_status, "Codex not available; offline mode.")
 
     def action_toggle_plot(self) -> None:
         tabs = self.query_one("#main-tabs", TabbedContent)
@@ -373,22 +403,66 @@ class CodexDataLabApp(App):
         if not message:
             return
         self._append_chat(f"You: {message}")
+        self.run_worker(
+            lambda: self._handle_chat_message_worker(message),
+            exclusive=True,
+            thread=True,
+        )
+
+    def _handle_chat_message_worker(self, message: str) -> None:
         response, artifact_id = self._handle_chat_message(message)
-        self._append_chat(f"Codex: {response}")
-        self._record_answer(message, response, self._selected_dataset_id, artifact_id)
+        self.call_from_thread(self._append_chat, f"Codex: {response}")
+        self.call_from_thread(
+            self._record_answer, message, response, self._selected_dataset_id, artifact_id
+        )
 
     def _handle_chat_message(self, message: str) -> tuple[str, str | None]:
         if message.startswith("/help"):
             return (
-                "Commands: /datasets, /describe, /stats, /value_counts <col>, /groupby <col1,col2>",
+                "Commands: /datasets, /import <path>, /fetch_url <url>, /allow_domain <domain>, "
+                "/describe, /stats, /value_counts <col>, /groupby <col1,col2>",
                 None,
             )
         if message.startswith("/datasets"):
             datasets = list_datasets(self.workspace)
             lines = [f"{ds.get('id')} — {ds.get('name')}" for ds in datasets]
             return ("Datasets:\\n" + "\\n".join(lines) if lines else "No datasets.", None)
+        if message.startswith("/import"):
+            parts = message.split(maxsplit=1)
+            if len(parts) < 2:
+                return ("Usage: /import <path>", None)
+            try:
+                record = self.tool_harness.import_dataset(parts[1])
+            except Exception as exc:
+                return (f"Import failed: {exc}", None)
+            self._refresh_dataset_list()
+            return (f"Imported dataset {record['dataset_id']}.", None)
+        if message.startswith("/fetch_url"):
+            parts = message.split(maxsplit=1)
+            if len(parts) < 2:
+                return ("Usage: /fetch_url <url>", None)
+            try:
+                record = self.tool_harness.fetch_url(parts[1])
+            except Exception as exc:
+                return (f"Fetch failed: {exc}", None)
+            self._refresh_dataset_list()
+            return (
+                f"Fetched dataset {record['dataset_id']} (receipt {record['receipt_path']}).",
+                None,
+            )
+        if message.startswith("/allow_domain"):
+            parts = message.split(maxsplit=1)
+            if len(parts) < 2:
+                return ("Usage: /allow_domain <domain>", None)
+            try:
+                updated = self.tool_harness.add_allowed_domain(parts[1])
+            except Exception as exc:
+                return (f"Update failed: {exc}", None)
+            return (f"Allowed domains: {', '.join(updated['allowed_domains'])}", None)
         if not self._selected_dataset_id:
-            return ("Select a dataset first.", None)
+            if self._codex_ready:
+                return self._ask_codex(message)
+            return ("Select a dataset first, or enable Codex for general questions.", None)
 
         try:
             df = preview_dataset(self.workspace, self._selected_dataset_id, max_rows=1000, max_cols=100)
@@ -433,6 +507,9 @@ class CodexDataLabApp(App):
                 artifact_id,
             )
 
+        if self._codex_ready:
+            return self._ask_codex(message, dataset_id=self._selected_dataset_id)
+
         try:
             payload = numeric_summary(df)
         except Exception as exc:
@@ -442,6 +519,18 @@ class CodexDataLabApp(App):
             f"I ran a quick numeric summary on the selected dataset (artifact {artifact_id}).",
             artifact_id,
         )
+
+    def _ask_codex(self, message: str, *, dataset_id: str | None = None) -> tuple[str, str | None]:
+        if not self._codex_ready:
+            return ("Codex is not available.", None)
+        context = ""
+        if dataset_id:
+            context = f"Current dataset id: {dataset_id}\n"
+        try:
+            result = self.codex_client.send_message(context + message)
+            return (result.text or "No response.", None)
+        except Exception as exc:
+            return (f"Codex error: {exc}", None)
 
     def _save_result_artifact(self, kind: str, payload: dict) -> str:
         artifact_id = generate_id("res")

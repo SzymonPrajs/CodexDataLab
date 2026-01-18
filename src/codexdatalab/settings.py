@@ -73,3 +73,23 @@ def save_settings(settings: Settings) -> None:
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings.to_dict(), indent=2, sort_keys=True) + "\n")
+
+
+def add_allowed_domain(domain: str) -> Settings:
+    domain = (domain or "").strip()
+    if not domain:
+        raise ValueError("Domain is required.")
+    settings = load_settings()
+    normalized = [item.lower() for item in settings.allowed_domains]
+    if domain.lower() not in normalized:
+        updated_domains = settings.allowed_domains + [domain]
+    else:
+        updated_domains = settings.allowed_domains
+    updated = Settings(
+        max_copy_bytes=settings.max_copy_bytes,
+        offline_mode=settings.offline_mode,
+        prompt_on_large_file=settings.prompt_on_large_file,
+        allowed_domains=updated_domains,
+    )
+    save_settings(updated)
+    return updated

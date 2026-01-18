@@ -9,7 +9,7 @@ Canonical “what/why” lives in `VISION.md`. This file is “how/when/what fir
 ## MVP Execution Checklist
 
 - [x] FOUNDATION-0: Workspace kernel + metadata + tool harness
-- [ ] MVP-1A: App-server + Codex integration (next deliverable)
+- [x] MVP-1A: App-server + Codex integration (next deliverable)
 - [x] MVP-1: Local dataset import (copy/link + provenance)
 - [x] MVP-2: Polars-backed dataset loading + table preview
 - [x] MVP-3: Optional stats tab for a dataset
@@ -220,7 +220,7 @@ Route all user-facing actions through the app-server/Codex tool layer and remove
 
 **Includes**
 - App-server integration via `codex app-server` (local Codex CLI)
-- Generate and store the app-server JSON schema (`codex app-server generate-json-schema`) to lock protocol expectations.
+- Generate and store the app-server JSON schema (`codex app-server generate-json-schema`) to lock protocol expectations (stored under `schemas/codex_app_server/`).
 - A stable “tool call” interface so chat + TUI can call:
   - list/import datasets
   - preview/statistics

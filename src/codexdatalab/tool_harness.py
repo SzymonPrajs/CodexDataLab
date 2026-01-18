@@ -6,6 +6,8 @@ from typing import Callable, Any
 
 from .analysis import groupby_count, numeric_summary, schema_and_nulls, value_counts
 from .data_ops import import_dataset, list_datasets, preview_dataset
+from .fetch_ops import fetch_url
+from .settings import add_allowed_domain
 from .utils import generate_id, utc_now_iso
 from .workspace import Workspace
 
@@ -79,3 +81,30 @@ class ToolHarness:
         self.workspace.save_answers(answers)
         self.workspace.commit("Record answer", paths=[".codexdatalab/qa.json"])
         return {"answer_id": answer_id}
+
+    def fetch_url(
+        self,
+        url: str,
+        *,
+        display_name: str | None = None,
+        format_hint: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        result = fetch_url(
+            self.workspace,
+            url,
+            display_name=display_name,
+            format_hint=format_hint,
+            metadata=metadata,
+            prompt=None,
+        )
+        return {
+            "dataset_id": result.dataset_id,
+            "path": str(result.path),
+            "receipt_path": str(result.receipt_path),
+        }
+
+    def add_allowed_domain(self, domain: str) -> dict[str, Any]:
+        updated = add_allowed_domain(domain)
+        self.workspace.settings = updated
+        return {"allowed_domains": updated.allowed_domains}
