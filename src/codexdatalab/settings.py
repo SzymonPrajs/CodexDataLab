@@ -10,6 +10,9 @@ SETTINGS_FILENAME = "settings.json"
 SCHEMA_VERSION = 0
 DEFAULT_MAX_COPY_BYTES = 50 * 1024 * 1024  # 50 MB
 DEFAULT_ALLOWED_DOMAINS: list[str] = []
+DEFAULT_PROMPT_EXTERNAL_PATHS = True
+DEFAULT_PROMPT_NETWORK = True
+DEFAULT_PROMPT_TRANSFORM = True
 
 
 @dataclass(frozen=True)
@@ -17,6 +20,9 @@ class Settings:
     max_copy_bytes: int
     offline_mode: bool
     prompt_on_large_file: bool
+    prompt_on_external_paths: bool
+    prompt_on_network: bool
+    prompt_on_transform: bool
     allowed_domains: list[str]
     schema_version: int = SCHEMA_VERSION
 
@@ -26,6 +32,11 @@ class Settings:
             max_copy_bytes=int(data.get("max_copy_bytes", DEFAULT_MAX_COPY_BYTES)),
             offline_mode=bool(data.get("offline_mode", False)),
             prompt_on_large_file=bool(data.get("prompt_on_large_file", True)),
+            prompt_on_external_paths=bool(
+                data.get("prompt_on_external_paths", DEFAULT_PROMPT_EXTERNAL_PATHS)
+            ),
+            prompt_on_network=bool(data.get("prompt_on_network", DEFAULT_PROMPT_NETWORK)),
+            prompt_on_transform=bool(data.get("prompt_on_transform", DEFAULT_PROMPT_TRANSFORM)),
             allowed_domains=list(data.get("allowed_domains", DEFAULT_ALLOWED_DOMAINS)),
             schema_version=int(data.get("schema_version", SCHEMA_VERSION)),
         )
@@ -36,6 +47,9 @@ class Settings:
             "max_copy_bytes": self.max_copy_bytes,
             "offline_mode": self.offline_mode,
             "prompt_on_large_file": self.prompt_on_large_file,
+            "prompt_on_external_paths": self.prompt_on_external_paths,
+            "prompt_on_network": self.prompt_on_network,
+            "prompt_on_transform": self.prompt_on_transform,
             "allowed_domains": self.allowed_domains,
         }
 
@@ -55,6 +69,9 @@ def load_settings() -> Settings:
             max_copy_bytes=DEFAULT_MAX_COPY_BYTES,
             offline_mode=False,
             prompt_on_large_file=True,
+            prompt_on_external_paths=DEFAULT_PROMPT_EXTERNAL_PATHS,
+            prompt_on_network=DEFAULT_PROMPT_NETWORK,
+            prompt_on_transform=DEFAULT_PROMPT_TRANSFORM,
             allowed_domains=DEFAULT_ALLOWED_DOMAINS,
         )
         save_settings(settings)
@@ -89,6 +106,9 @@ def add_allowed_domain(domain: str) -> Settings:
         max_copy_bytes=settings.max_copy_bytes,
         offline_mode=settings.offline_mode,
         prompt_on_large_file=settings.prompt_on_large_file,
+        prompt_on_external_paths=settings.prompt_on_external_paths,
+        prompt_on_network=settings.prompt_on_network,
+        prompt_on_transform=settings.prompt_on_transform,
         allowed_domains=updated_domains,
     )
     save_settings(updated)

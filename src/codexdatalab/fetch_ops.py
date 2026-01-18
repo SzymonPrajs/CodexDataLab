@@ -152,7 +152,7 @@ def _write_receipt(
     metadata: dict[str, Any],
 ) -> Path:
     receipt_id = generate_id("res")
-    receipt_path = workspace.root / "results" / f"{receipt_id}.json"
+    receipt_path = workspace.project_root() / "results" / f"{receipt_id}.json"
     receipt = {
         "id": receipt_id,
         "dataset_id": dataset_id,

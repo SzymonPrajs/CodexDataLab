@@ -17,9 +17,10 @@ def create_plot_definition(
     y: str | None,
     category: str | None = None,
     why: str = "",
+    fit: bool | None = None,
 ) -> dict[str, Any]:
     plot_id = generate_id("pl")
-    plot_path = workspace.root / "plots" / f"{plot_id}.json"
+    plot_path = workspace.project_root() / "plots" / f"{plot_id}.json"
     plot_path.parent.mkdir(parents=True, exist_ok=True)
 
     definition = {
@@ -31,7 +32,10 @@ def create_plot_definition(
         "category": category,
         "why": why,
         "created_at": utc_now_iso(),
+        "project": workspace.project_id(),
     }
+    if fit is not None:
+        definition["fit"] = bool(fit)
 
     plot_path.write_text(json.dumps(definition, indent=2, sort_keys=True) + "\n")
 
@@ -42,6 +46,7 @@ def create_plot_definition(
         "dataset_ids": [dataset_id],
         "why": why,
         "created_at": definition["created_at"],
+        "project": workspace.project_id(),
     }
     workspace.save_plots(plots_registry)
     workspace.add_lineage_edge(dataset_id, plot_id, "plot")
@@ -54,7 +59,14 @@ def create_plot_definition(
 
 def list_plots(workspace: Workspace) -> list[dict[str, Any]]:
     plots = workspace.load_plots().get("plots", {})
-    return [plots[key] for key in sorted(plots.keys())]
+    project_id = workspace.project_id()
+    items = []
+    for key in sorted(plots.keys()):
+        plot = plots[key]
+        if plot.get("project") and plot.get("project") != project_id:
+            continue
+        items.append(plot)
+    return items
 
 
 def load_plot_definition(workspace: Workspace, plot_id: str) -> dict[str, Any]:

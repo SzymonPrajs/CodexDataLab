@@ -349,6 +349,9 @@ def _default_instructions(workspace_root: Path) -> str:
         "For web data discovery, use the web search tool to find dataset URLs, then call "
         "codexdatalab.fetch_url to download into raw/. If a domain is blocked, ask the user "
         "and then call codexdatalab.add_allowed_domain. "
+        "Use recipes for lightweight computed columns, transforms for heavier cleaning, "
+        "and export reports via codexdatalab.export_report when requested. "
+        "Respect the active project (codexdatalab.set_active_project). "
         f"Workspace root: {workspace_root}."
     )
 

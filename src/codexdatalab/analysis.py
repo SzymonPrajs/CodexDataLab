@@ -39,7 +39,8 @@ def numeric_summary(df: pl.DataFrame) -> dict[str, Any]:
 
 def value_counts(df: pl.DataFrame, column: str, *, limit: int = 10) -> dict[str, Any]:
     counts = df.select(pl.col(column).value_counts()).unnest(column)
-    counts = counts.sort("counts", descending=True).head(limit)
+    count_col = "counts" if "counts" in counts.columns else "count"
+    counts = counts.sort(count_col, descending=True).head(limit)
     return {"rows": counts.to_dicts()}
 
 

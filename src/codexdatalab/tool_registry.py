@@ -6,6 +6,7 @@ from typing import Any, Callable
 from .analysis import numeric_summary, schema_and_nulls
 from .data_ops import preview_dataset
 from .plot_ops import create_plot_definition
+from .agent_log import log_event
 from .tool_harness import ToolHarness
 from .utils import utc_now_iso
 
@@ -51,9 +52,12 @@ class ToolRegistry:
             return ToolCallResult(False, None, "; ".join(errors), tool.effects)
 
         try:
+            log_event(self._tool_harness.workspace, "tool_call_local", {"tool": name, "arguments": arguments})
             result = tool.handler(arguments)
         except Exception as exc:
+            log_event(self._tool_harness.workspace, "tool_error_local", {"tool": name, "error": str(exc)})
             return ToolCallResult(False, None, f"{exc}", tool.effects)
+        log_event(self._tool_harness.workspace, "tool_result_local", {"tool": name, "result": result})
         return ToolCallResult(True, result, None, tool.effects)
 
     def format_for_prompt(self) -> str:
@@ -131,6 +135,7 @@ class ToolRegistry:
                         "x": {"type": ["string", "null"]},
                         "y": {"type": ["string", "null"]},
                         "category": {"type": ["string", "null"]},
+                        "fit": {"type": ["boolean", "null"]},
                         "why": {"type": "string"},
                     },
                     "required": ["dataset_id", "plot_type"],
@@ -138,6 +143,95 @@ class ToolRegistry:
                 },
                 handler=self._create_plot,
                 effects=["plots"],
+            ),
+            ToolSpec(
+                name="codexdatalab.create_transform",
+                description="Create a transform script for a dataset.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "dataset_id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "why": {"type": "string"},
+                    },
+                    "required": ["dataset_id", "name"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._tool_harness.create_transform(
+                    args["dataset_id"], args["name"], why=args.get("why", "")
+                ),
+                effects=["transforms"],
+            ),
+            ToolSpec(
+                name="codexdatalab.run_transform",
+                description="Run a transform script and capture outputs.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "transform_path": {"type": "string"},
+                        "input_dataset_id": {"type": ["string", "null"]},
+                        "why": {"type": "string"},
+                    },
+                    "required": ["transform_path"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._tool_harness.run_transform_by_path(
+                    args["transform_path"],
+                    input_dataset_id=args.get("input_dataset_id"),
+                    why=args.get("why", ""),
+                ),
+                effects=["datasets", "transforms"],
+            ),
+            ToolSpec(
+                name="codexdatalab.create_recipe",
+                description="Create a computed-column recipe.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "dataset_id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "output_column": {"type": "string"},
+                        "expression": {"type": "string"},
+                        "why": {"type": "string"},
+                        "parent_recipe_id": {"type": ["string", "null"]},
+                    },
+                    "required": ["dataset_id", "name", "output_column", "expression"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._tool_harness.create_recipe(
+                    dataset_id=args["dataset_id"],
+                    name=args["name"],
+                    output_column=args["output_column"],
+                    expression=args["expression"],
+                    why=args.get("why", ""),
+                    parent_recipe_id=args.get("parent_recipe_id"),
+                ),
+                effects=["recipes"],
+            ),
+            ToolSpec(
+                name="codexdatalab.apply_recipe",
+                description="Apply a computed-column recipe to create a derived dataset.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "recipe_id": {"type": "string"},
+                        "output_name": {"type": ["string", "null"]},
+                    },
+                    "required": ["recipe_id"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._tool_harness.apply_recipe(
+                    recipe_id=args["recipe_id"],
+                    output_name=args.get("output_name"),
+                ),
+                effects=["datasets"],
+            ),
+            ToolSpec(
+                name="codexdatalab.list_recipes",
+                description="List available recipes in the active project.",
+                input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+                handler=lambda _args: self._tool_harness.list_recipes(),
+                effects=[],
             ),
             ToolSpec(
                 name="codexdatalab.record_answer",
@@ -202,6 +296,47 @@ class ToolRegistry:
                 handler=lambda _args: {"timestamp": utc_now_iso()},
                 effects=[],
             ),
+            ToolSpec(
+                name="codexdatalab.export_report",
+                description="Export a Jupyter notebook report for the current project.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"title": {"type": ["string", "null"]}},
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._tool_harness.export_report(title=args.get("title")),
+                effects=["reports"],
+            ),
+            ToolSpec(
+                name="codexdatalab.list_projects",
+                description="List available projects in the workspace.",
+                input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+                handler=lambda _args: self._tool_harness.list_projects(),
+                effects=[],
+            ),
+            ToolSpec(
+                name="codexdatalab.create_project",
+                description="Create a new project in the workspace.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._tool_harness.create_project(args["name"]),
+                effects=["projects"],
+            ),
+            ToolSpec(
+                name="codexdatalab.set_active_project",
+                description="Set the active project for the session.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"name": {"type": ["string", "null"]}},
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._tool_harness.set_active_project(args.get("name")),
+                effects=["projects", "datasets", "plots"],
+            ),
         ]
 
     def _preview_dataset(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -231,6 +366,7 @@ class ToolRegistry:
             y=args.get("y"),
             category=args.get("category"),
             why=args.get("why", ""),
+            fit=args.get("fit"),
         )
         return {"plot": definition}
 

@@ -15,6 +15,7 @@ def test_create_workspace_skeleton(tmp_path: Path) -> None:
     assert (workspace_root / "plots").is_dir()
     assert (workspace_root / "results").is_dir()
     assert (workspace_root / "reports").is_dir()
+    assert (workspace_root / "projects").is_dir()
     assert (workspace_root / ".codexdatalab").is_dir()
 
     assert (workspace_root / ".codexdatalab" / "manifest.json").is_file()

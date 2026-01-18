@@ -39,6 +39,9 @@ def test_fetch_url_downloads(tmp_path: Path) -> None:
             max_copy_bytes=1024 * 1024,
             offline_mode=False,
             prompt_on_large_file=True,
+            prompt_on_external_paths=True,
+            prompt_on_network=False,
+            prompt_on_transform=True,
             allowed_domains=["127.0.0.1"],
         )
         workspace = init_workspace(tmp_path / "ws", settings, git_enabled=False)
@@ -60,6 +63,9 @@ def test_fetch_url_blocks_disallowed_domain(tmp_path: Path) -> None:
         max_copy_bytes=1024,
         offline_mode=False,
         prompt_on_large_file=True,
+        prompt_on_external_paths=True,
+        prompt_on_network=False,
+        prompt_on_transform=True,
         allowed_domains=["example.com"],
     )
     workspace = init_workspace(tmp_path / "ws", settings, git_enabled=False)

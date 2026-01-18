@@ -20,6 +20,16 @@ Canonical “what/why” lives in `VISION.md`. This file is “how/when/what fir
 - [x] MVP-8: Provenance enforcement + UX affordances
 - [x] MVP-9: Workspace summary (markdown) rendered in TUI
 
+## Future Work Execution Checklist
+
+- [x] FUT-1: Web dataset search + download (Codex-assisted, curated)
+- [x] FUT-2: Computed columns (“recipes”) and lightweight aggregators
+- [x] FUT-3: Expanded plotting (fits, multi-series, more chart types)
+- [x] FUT-4: Interactive widgets for filtering/exploration
+- [x] FUT-5: Notebook report export (workspace + chat context)
+- [x] FUT-6: Multi-project workspaces + cross-linking
+- [x] FUT-7: Safer execution + permissions model (agent hardening)
+
 ---
 
 ## Locked decisions (do not re-litigate without updating this doc)
@@ -459,6 +469,11 @@ Let Codex find candidate datasets on the web and download them into `raw/` with 
   - source URL, retrieval time, content hash, license/provenance notes if available
 - Optional: dataset “receipt” artifact under `results/` summarizing source and terms
 
+**Checklist (implemented)**
+- [x] Codex instructions require web search + `fetch_url` for downloads (no hardcoded sources)
+- [x] Allowlist enforced in `fetch_url` with explicit approval hooks
+- [x] Download receipts written under `results/` and linked in manifest/lineage
+
 ### FUT-2: Computed columns (“recipes”) and lightweight aggregators
 
 **Goal**
@@ -471,6 +486,11 @@ Support user/agent-defined derived columns that are reproducible and editable.
 - “Recipe” definition stored as a snippet (e.g., `transforms/recipes/<recipe_id>.py|json`)
 - Ability to apply recipes to a dataset to produce a derived dataset (or virtual view)
 - UI affordance to mark columns as derived and to edit the snippet
+
+**Checklist (implemented)**
+- [x] Recipe definitions stored under `transforms/recipes/` and registered in manifest
+- [x] `apply_recipe` creates derived datasets in `data/` with lineage edges
+- [x] Recipes are tool-addressable (Codex + manual chat commands)
 
 ### FUT-3: Expanded plotting (fits, multi-series, more chart types)
 
@@ -485,6 +505,11 @@ Increase expressiveness of terminal previews.
 - Multi-series coloring and legend support
 - Additional plot types: violin (if feasible in TUI), error bars
 
+**Checklist (implemented)**
+- [x] Scatter/line plots support optional linear fit overlays
+- [x] Category-based multi-series rendering with color + legend
+- [x] Violin and error-bar plot types available in TUI
+
 ### FUT-4: Interactive widgets for filtering/exploration
 
 **Goal**
@@ -497,6 +522,10 @@ Provide simple interactive controls (slider/select/dropdown) that can be attache
 - A small set of widget primitives (filter, range slider, category selector)
 - A binding mechanism so a plot/table can reference widget state
 - Persist widget config/state in `.codexdatalab/state.json`
+
+**Checklist (implemented)**
+- [x] Filter widgets (column + op + value/range) wired into table + plot views
+- [x] Filter state persisted in `state.json`
 
 ### FUT-5: Notebook report export (from workspace + chat context)
 
@@ -515,6 +544,11 @@ Generate a polished Jupyter notebook that reproduces the analysis with narrative
   - markdown narrative derived from summary + Q&A + plot rationales
 - Links/pointers to workspace artifacts for traceability
 
+**Checklist (implemented)**
+- [x] Report export tool writes `reports/<report_id>.ipynb`
+- [x] Notebook includes summary, dataset loading cells, plot placeholders, and Q&A narrative
+- [x] Report metadata stored in manifest with lineage edges
+
 ### FUT-6: Multi-project workspaces + cross-linking
 
 **Goal**
@@ -527,6 +561,11 @@ Allow multiple “projects” inside a workspace, sharing or linking datasets.
 - Introduce optional `projects/<name>/...` structure while keeping the current flat layout as the default “project”
 - Cross-project dataset references (shared datasets registry or explicit links)
 - One report per project (initially)
+
+**Checklist (implemented)**
+- [x] `projects/<name>/...` folders supported with active project selection
+- [x] Shared manifest + project-scoped paths enable cross-project datasets
+- [x] Reports are generated per active project
 
 ### FUT-7: Safer execution + permissions model (agent hardening)
 
@@ -542,6 +581,11 @@ Make agentic automation safer and more predictable as capabilities grow.
   - network downloads
   - running transforms or arbitrary code
 - Audit log of tool calls (append-only log in `.codexdatalab/`)
+
+**Checklist (implemented)**
+- [x] Settings include explicit prompt toggles for external paths, network, transforms
+- [x] Tool harness enforces permission checks before risky actions
+- [x] Tool call audit log appended to `.codexdatalab/agent_log.jsonl`
 
 ---
 

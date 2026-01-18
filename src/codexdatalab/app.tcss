@@ -10,7 +10,7 @@ Screen {
 }
 
 #menu {
-    width: 30;
+    width: 36;
     border: round #334155;
     background: #0b1220;
     padding: 1 1;
@@ -101,6 +101,32 @@ ListView > .list--highlight {
 #plot-list {
     height: 1fr;
     margin-top: 1;
+}
+
+#recipe-body {
+    layout: horizontal;
+    height: 1fr;
+}
+
+#recipe-controls {
+    width: 32;
+    border: round #334155;
+    background: #0f172a;
+    padding: 1 1;
+}
+
+#recipe-list {
+    height: 1fr;
+    margin-top: 1;
+}
+
+#recipe-meta {
+    width: 1fr;
+    height: 1fr;
+    border: round #1f2937;
+    padding: 1 1;
+    margin-left: 1;
+    color: #94a3b8;
 }
 
 #chat {

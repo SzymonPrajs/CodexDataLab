@@ -58,7 +58,7 @@ def import_dataset(
     sha256 = hash_file(source_path)
     dataset_id = f"ds_{sha256[:12]}"
 
-    raw_dir = workspace.root / "raw"
+    raw_dir = workspace.project_root() / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     dest_path = raw_dir / f"{dataset_id}.{ext}"
 
@@ -74,11 +74,14 @@ def import_dataset(
     manifest = workspace.load_manifest()
     datasets = manifest.setdefault("datasets", {})
     created_at = utc_now_iso()
+    project_id = workspace.project_id()
     if dataset_id not in datasets:
         datasets[dataset_id] = {
             "id": dataset_id,
             "kind": "raw",
             "path": str(dest_path.relative_to(workspace.root)),
+            "paths_by_project": {project_id: str(dest_path.relative_to(workspace.root))},
+            "projects": [project_id],
             "format": ext,
             "sha256": sha256,
             "size_bytes": size_bytes,
@@ -86,6 +89,15 @@ def import_dataset(
             "created_at": created_at,
             "name": display_name or source_path.name,
         }
+    else:
+        entry = datasets[dataset_id]
+        entry.setdefault("paths_by_project", {})
+        entry.setdefault("projects", [])
+        entry["paths_by_project"][project_id] = str(dest_path.relative_to(workspace.root))
+        if project_id not in entry["projects"]:
+            entry["projects"].append(project_id)
+        if "path" not in entry:
+            entry["path"] = str(dest_path.relative_to(workspace.root))
 
     source_entry = {
         "source": source_label or str(source_path),
@@ -96,7 +108,10 @@ def import_dataset(
     if not any(entry.get("source") == source_entry["source"] for entry in sources):
         sources.append(source_entry)
     workspace.save_manifest(manifest)
-    workspace.commit(f"Import dataset {dataset_id}", paths=[dest_path.as_posix(), ".codexdatalab/manifest.json"])
+    workspace.commit(
+        f"Import dataset {dataset_id}",
+        paths=[str(dest_path.relative_to(workspace.root)), ".codexdatalab/manifest.json"],
+    )
 
     return DatasetRecord(dataset_id=dataset_id, path=dest_path, kind="raw", format=ext)
 
@@ -104,8 +119,15 @@ def import_dataset(
 def list_datasets(workspace: Workspace) -> list[dict]:
     manifest = workspace.load_manifest()
     datasets = list(manifest.get("datasets", {}).values())
+    project_id = workspace.project_id()
+    filtered = []
+    for item in datasets:
+        projects = item.get("projects")
+        if projects and project_id not in projects:
+            continue
+        filtered.append(item)
     return sorted(
-        datasets,
+        filtered,
         key=lambda item: (
             0 if item.get("kind") == "cleaned" else 1,
             item.get("created_at", ""),
@@ -115,7 +137,22 @@ def list_datasets(workspace: Workspace) -> list[dict]:
 
 def get_dataset(workspace: Workspace, dataset_id: str) -> dict | None:
     manifest = workspace.load_manifest()
-    return manifest.get("datasets", {}).get(dataset_id)
+    dataset = manifest.get("datasets", {}).get(dataset_id)
+    if not dataset:
+        return None
+    project_id = workspace.project_id()
+    paths_by_project = dataset.get("paths_by_project", {})
+    if project_id in paths_by_project:
+        dataset = dict(dataset)
+        dataset["path"] = paths_by_project[project_id]
+        return dataset
+    if dataset.get("path"):
+        return dataset
+    if paths_by_project:
+        dataset = dict(dataset)
+        dataset["path"] = next(iter(paths_by_project.values()))
+        return dataset
+    return dataset
 
 
 def load_dataset_lazy(workspace: Workspace, dataset_id: str) -> pl.LazyFrame:

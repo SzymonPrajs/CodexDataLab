@@ -12,6 +12,7 @@ from .workspace_scaffold import WORKSPACE_DIRS, create_workspace_skeleton
 
 SCHEMA_VERSION = 0
 WORKSPACE_MARKER = ".codexdatalab"
+DEFAULT_PROJECT = "__default__"
 
 
 @dataclass
@@ -19,9 +20,35 @@ class Workspace:
     root: Path
     settings: Settings
     git_enabled: bool = False
+    project: str | None = None
 
     def meta_dir(self) -> Path:
         return self.root / WORKSPACE_MARKER
+
+    def project_id(self) -> str:
+        return self.project or DEFAULT_PROJECT
+
+    def project_root(self) -> Path:
+        if self.project:
+            return self.root / "projects" / self.project
+        return self.root
+
+    def ensure_project(self, name: str) -> Path:
+        project_root = self.root / "projects" / name
+        create_workspace_skeleton(project_root, schema_version=SCHEMA_VERSION, include_meta=False, include_projects_dir=False)
+        return project_root
+
+    def list_projects(self) -> list[str]:
+        projects_dir = self.root / "projects"
+        if not projects_dir.is_dir():
+            return []
+        return sorted(
+            [
+                entry.name
+                for entry in projects_dir.iterdir()
+                if entry.is_dir() and not entry.name.startswith(".")
+            ]
+        )
 
     def metadata_path(self, name: str) -> Path:
         return self.meta_dir() / name
@@ -46,10 +73,22 @@ class Workspace:
         state.setdefault("ui", {})[key] = value
         self.save_json("state.json", state)
 
+    def set_active_project(self, name: str | None) -> None:
+        if name:
+            self.ensure_project(name)
+        self.project = name
+        self.update_ui_state("active_project", name or "")
+
     def load_manifest(self) -> dict[str, Any]:
         return self.load_json(
             "manifest.json",
-            {"schema_version": SCHEMA_VERSION, "datasets": {}, "transforms": {}},
+            {
+                "schema_version": SCHEMA_VERSION,
+                "datasets": {},
+                "transforms": {},
+                "recipes": {},
+                "reports": {},
+            },
         )
 
     def save_manifest(self, data: dict[str, Any]) -> None:
@@ -118,10 +157,10 @@ def find_workspace_root(start: Path) -> Path | None:
 
 
 def init_workspace(root: Path, settings: Settings, *, git_enabled: bool = True) -> Workspace:
-    create_workspace_skeleton(root, schema_version=SCHEMA_VERSION)
+    create_workspace_skeleton(root, schema_version=SCHEMA_VERSION, include_meta=True, include_projects_dir=True)
     repo_ready = False
     if git_enabled and ensure_git_repo(root):
-        ensure_workspace_gitignore(root, ["raw/"])
+        ensure_workspace_gitignore(root, ["raw/", "projects/*/raw/"])
         repo_ready = True
         commit_if_needed(root, "Initialize workspace")
     workspace = load_workspace(root, settings)
@@ -130,9 +169,14 @@ def init_workspace(root: Path, settings: Settings, *, git_enabled: bool = True) 
 
 
 def load_workspace(root: Path, settings: Settings) -> Workspace:
-    create_workspace_skeleton(root, schema_version=SCHEMA_VERSION)
+    create_workspace_skeleton(root, schema_version=SCHEMA_VERSION, include_meta=True, include_projects_dir=True)
     git_enabled = (root / ".git").is_dir()
-    return Workspace(root=root, settings=settings, git_enabled=git_enabled)
+    workspace = Workspace(root=root, settings=settings, git_enabled=git_enabled)
+    state = workspace.load_state()
+    active_project = state.get("ui", {}).get("active_project")
+    if isinstance(active_project, str) and active_project:
+        workspace.project = active_project
+    return workspace
 
 
 def is_workspace_root(path: Path) -> bool:

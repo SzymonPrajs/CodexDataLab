@@ -9,6 +9,19 @@ from .settings import load_settings
 from .workspace import find_workspace_root, init_workspace, load_workspace
 
 
+def _detect_project(start_path: Path, workspace_root: Path) -> str | None:
+    projects_dir = workspace_root / "projects"
+    if not projects_dir.is_dir():
+        return None
+    try:
+        relative = start_path.relative_to(projects_dir)
+    except ValueError:
+        return None
+    if relative.parts:
+        return relative.parts[0]
+    return None
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="codexdatalab")
     subparsers = parser.add_subparsers(dest="command")
@@ -48,6 +61,9 @@ def main() -> None:
         init_workspace(workspace_root, settings, git_enabled=True)
 
     workspace = load_workspace(workspace_root, settings)
+    project_name = _detect_project(start_path, workspace_root)
+    if project_name:
+        workspace.set_active_project(project_name)
     CodexDataLabApp(workspace).run()
 
 

@@ -5,18 +5,28 @@ import shutil
 from pathlib import Path
 from typing import Iterable
 
-WORKSPACE_DIRS: tuple[str, ...] = (
+CORE_DIRS: tuple[str, ...] = (
     "raw",
     "data",
     "transforms",
     "plots",
     "results",
     "reports",
+)
+
+WORKSPACE_DIRS: tuple[str, ...] = CORE_DIRS + (
     ".codexdatalab",
+    "projects",
 )
 
 
-def create_workspace_skeleton(workspace_root: Path, *, schema_version: int = 0) -> None:
+def create_workspace_skeleton(
+    workspace_root: Path,
+    *,
+    schema_version: int = 0,
+    include_meta: bool = True,
+    include_projects_dir: bool = True,
+) -> None:
     """Create the standard workspace folder layout and base JSON metadata files.
 
     This is intentionally minimal scaffolding for development and tests. It
@@ -24,8 +34,13 @@ def create_workspace_skeleton(workspace_root: Path, *, schema_version: int = 0) 
     """
 
     workspace_root.mkdir(parents=True, exist_ok=True)
-    for dir_name in WORKSPACE_DIRS:
+    for dir_name in CORE_DIRS:
         (workspace_root / dir_name).mkdir(parents=True, exist_ok=True)
+    if include_projects_dir:
+        (workspace_root / "projects").mkdir(parents=True, exist_ok=True)
+    if not include_meta:
+        return
+    (workspace_root / ".codexdatalab").mkdir(parents=True, exist_ok=True)
 
     meta_dir = workspace_root / ".codexdatalab"
     _write_json_if_missing(
@@ -34,6 +49,8 @@ def create_workspace_skeleton(workspace_root: Path, *, schema_version: int = 0) 
             "schema_version": schema_version,
             "datasets": {},
             "transforms": {},
+            "recipes": {},
+            "reports": {},
         },
     )
     _write_json_if_missing(

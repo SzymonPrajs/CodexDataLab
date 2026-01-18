@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from textual.app import App, ComposeResult
 from typing import Any
+import threading
 from textual.containers import Horizontal, Vertical
 from textual.widgets import (
     Button,
@@ -31,10 +32,12 @@ from .codex_app_server import CodexAppServerClient
 from .data_ops import list_datasets, preview_dataset
 from .plot_ops import create_plot_definition, list_plots, load_plot_definition
 from .plotting import PlotDefinition, render_plot
+from .recipe_ops import list_recipes, load_recipe
 from .summary_ops import generate_summary_markdown
 from .tool_harness import ToolHarness
 from .tool_registry import ToolRegistry
 import json
+import polars as pl
 
 from .utils import generate_id, utc_now_iso
 from .workspace import Workspace
@@ -57,7 +60,10 @@ class CodexDataLabApp(App):
     def __init__(self, workspace: Workspace) -> None:
         super().__init__()
         self.workspace = workspace
-        self.tool_harness = ToolHarness(workspace)
+        self._pending_confirm: str | None = None
+        self._confirm_event = None
+        self._confirm_result = False
+        self.tool_harness = ToolHarness(workspace, confirm=self._confirm_action)
         self.tool_registry = ToolRegistry(self.tool_harness)
         self.codex_client = CodexAppServerClient(
             workspace,
@@ -69,7 +75,10 @@ class CodexDataLabApp(App):
         self._stats_visible = bool(state.get("ui", {}).get("stats_visible", True))
         self._lineage_visible = bool(state.get("ui", {}).get("lineage_visible", False))
         self._selected_dataset_id: str | None = None
+        self._selected_plot_id: str | None = None
+        self._selected_recipe_id: str | None = None
         self._codex_ready = False
+        self._filter_state = state.get("ui", {}).get("filters", {})
 
     def _get_app_version(self) -> str:
         try:
@@ -83,10 +92,33 @@ class CodexDataLabApp(App):
         yield Header()
         with Horizontal(id="root"):
             with Vertical(id="menu"):
+                yield Label("Project", classes="title")
+                yield Select([], id="project-select")
+                yield Input(placeholder="new project name", id="project-new")
+                yield Button("Create Project", id="project-create")
+                yield Label("Active: default", id="project-meta", classes="meta")
+
                 yield Label("Datasets", classes="title")
                 yield Label("Select a dataset.", classes="subtitle")
                 yield ListView(id="dataset-list")
                 yield Label("Selected: —", id="dataset-meta", classes="meta")
+
+                yield Label("Filters", classes="title")
+                yield Select([], id="filter-column")
+                yield Select(
+                    [
+                        ("equals", "equals"),
+                        ("contains", "contains"),
+                        ("range", "range"),
+                    ],
+                    id="filter-op",
+                    value="equals",
+                )
+                yield Input(placeholder="value", id="filter-value")
+                yield Input(placeholder="min (range)", id="filter-min")
+                yield Input(placeholder="max (range)", id="filter-max")
+                yield Button("Apply Filter", id="filter-apply")
+                yield Button("Clear Filter", id="filter-clear")
 
             with Vertical(id="right"):
                 with TabbedContent(id="main-tabs"):
@@ -105,6 +137,8 @@ class CodexDataLabApp(App):
                                         ("line", "line"),
                                         ("bar", "bar"),
                                         ("hist", "hist"),
+                                        ("violin", "violin"),
+                                        ("error_bar", "error_bar"),
                                     ],
                                     id="plot-type",
                                     value="scatter",
@@ -113,14 +147,42 @@ class CodexDataLabApp(App):
                                 yield Input(placeholder="x column", id="plot-x")
                                 yield Label("y column (optional)", classes="subtitle")
                                 yield Input(placeholder="y column", id="plot-y")
+                                yield Label("category column (optional)", classes="subtitle")
+                                yield Input(placeholder="category column", id="plot-category")
+                                yield Label("trend fit (optional)", classes="subtitle")
+                                yield Select(
+                                    [("none", "none"), ("linear", "linear")],
+                                    id="plot-fit",
+                                    value="none",
+                                )
                                 yield Button("Create Plot", id="plot-create")
                                 yield Static("Plot details", id="plot-meta")
                                 yield Label("Saved plots", classes="subtitle")
                                 yield ListView(id="plot-list")
                             yield Static("Plot canvas", id="plot-canvas")
+                    with TabPane("Recipes", id="recipe-tab"):
+                        with Horizontal(id="recipe-body"):
+                            with Vertical(id="recipe-controls"):
+                                yield Label("Recipe Controls", classes="title")
+                                yield Label("name", classes="subtitle")
+                                yield Input(placeholder="recipe name", id="recipe-name")
+                                yield Label("output column", classes="subtitle")
+                                yield Input(placeholder="new column", id="recipe-output")
+                                yield Label("expression", classes="subtitle")
+                                yield Input(placeholder="e.g. col('amount') * 1.2", id="recipe-expr")
+                                yield Button("Create Recipe", id="recipe-create")
+                                yield Label("apply recipe id", classes="subtitle")
+                                yield Input(placeholder="recipe id", id="recipe-id")
+                                yield Label("output name (optional)", classes="subtitle")
+                                yield Input(placeholder="output filename", id="recipe-output-name")
+                                yield Button("Apply Recipe", id="recipe-apply")
+                                yield Label("Saved recipes", classes="subtitle")
+                                yield ListView(id="recipe-list")
+                            yield Static("Recipe details", id="recipe-meta")
                     with TabPane("Summary", id="summary-tab"):
                         yield Markdown("", id="summary-view")
                         yield Button("Regenerate Summary", id="summary-refresh")
+                        yield Button("Export Report", id="summary-export")
 
                 with Vertical(id="chat"):
                     yield Label("Chat", classes="title")
@@ -138,10 +200,13 @@ class CodexDataLabApp(App):
 
     def on_mount(self) -> None:
         self._apply_help_visibility()
+        self._refresh_project_select()
         self._refresh_dataset_list()
         self._refresh_plot_list()
+        self._refresh_recipe_list()
         self._apply_stats_visibility()
         self._load_summary()
+        self._apply_filter_state()
         self._set_status(f"Workspace loaded: {self.workspace.root}")
         if self.workspace.settings.offline_mode:
             self._set_status("Offline mode enabled; Codex disabled.")
@@ -222,13 +287,46 @@ class CodexDataLabApp(App):
         status_label = self.query_one("#status", Label)
         status_label.update(f"Status: {message}")
 
+    def _confirm_action(self, prompt: str) -> bool:
+        if self._confirm_event is None:
+            self._confirm_event = threading.Event()
+        self._confirm_event.clear()
+        self._confirm_result = False
+        self._pending_confirm = prompt
+        self.call_from_thread(self._append_chat, f"[confirm] {prompt} (yes/no)")
+        self.call_from_thread(self._set_status, "Awaiting confirmation in chat input.")
+        self._confirm_event.wait(timeout=120)
+        self._pending_confirm = None
+        return self._confirm_result
+
     def _load_summary(self) -> None:
-        summary_path = self.workspace.root / "results" / "summary.md"
+        summary_path = self.workspace.project_root() / "results" / "summary.md"
         summary_view = self.query_one("#summary-view", Markdown)
         if summary_path.exists():
             summary_view.update(summary_path.read_text())
         else:
             summary_view.update("")
+
+    def _refresh_project_select(self) -> None:
+        select = self.query_one("#project-select", Select)
+        projects = self.workspace.list_projects()
+        options = [("default", "default")] + [(name, name) for name in projects]
+        select.set_options(options)
+        active = self.workspace.project or "default"
+        select.value = active
+        meta = self.query_one("#project-meta", Label)
+        meta.update(f"Active: {active}")
+        self.sub_title = f"{self.workspace.root} [{active}]"
+
+    def _apply_filter_state(self) -> None:
+        filters = self._filter_state or {}
+        try:
+            self.query_one("#filter-op", Select).value = filters.get("op", "equals")
+            self.query_one("#filter-value", Input).value = filters.get("value", "")
+            self.query_one("#filter-min", Input).value = filters.get("min", "")
+            self.query_one("#filter-max", Input).value = filters.get("max", "")
+        except Exception:
+            return
 
     def _refresh_dataset_list(self) -> None:
         list_view = self.query_one("#dataset-list", ListView)
@@ -238,6 +336,7 @@ class CodexDataLabApp(App):
             dataset_id = dataset.get("id")
             label = dataset.get("name") or dataset_id
             list_view.append(ListItem(Label(f"{label} ({dataset.get('kind')})"), id=dataset_id))
+        self._refresh_filter_columns()
 
     def _refresh_plot_list(self) -> None:
         list_view = self.query_one("#plot-list", ListView)
@@ -248,11 +347,59 @@ class CodexDataLabApp(App):
             label = plot.get("why") or plot_id
             list_view.append(ListItem(Label(label), id=plot_id))
 
+    def _refresh_recipe_list(self) -> None:
+        list_view = self.query_one("#recipe-list", ListView)
+        list_view.clear()
+        recipes = list_recipes(self.workspace)
+        for recipe in recipes:
+            recipe_id = recipe.get("id")
+            label = recipe.get("name") or recipe_id
+            list_view.append(ListItem(Label(label), id=recipe_id))
+
+    def _refresh_filter_columns(self) -> None:
+        select = self.query_one("#filter-column", Select)
+        if not self._selected_dataset_id:
+            select.set_options([])
+            return
+        try:
+            df = preview_dataset(self.workspace, self._selected_dataset_id, max_rows=1, max_cols=200)
+        except Exception:
+            return
+        options = [(col, col) for col in df.columns]
+        select.set_options(options)
+        current = self._filter_state.get("column") if self._filter_state else None
+        if current and current in df.columns:
+            select.value = current
+
+    def _apply_filters(self, df: pl.DataFrame) -> pl.DataFrame:
+        filters = self._filter_state or {}
+        column = filters.get("column")
+        if not column or column not in df.columns:
+            return df
+        op = filters.get("op", "equals")
+        if op == "range":
+            min_val = _parse_number(filters.get("min"))
+            max_val = _parse_number(filters.get("max"))
+            if min_val is not None:
+                df = df.filter(pl.col(column) >= min_val)
+            if max_val is not None:
+                df = df.filter(pl.col(column) <= max_val)
+            return df
+        value = filters.get("value")
+        if value is None or value == "":
+            return df
+        if op == "contains":
+            return df.filter(pl.col(column).cast(pl.Utf8).str.contains(str(value)))
+        number = _parse_number(value)
+        if number is not None and df[column].dtype.is_numeric():
+            return df.filter(pl.col(column) == number)
+        return df.filter(pl.col(column) == value)
     def _refresh_table(self) -> None:
         if not self._selected_dataset_id:
             return
         try:
             df = preview_dataset(self.workspace, self._selected_dataset_id)
+            df = self._apply_filters(df)
         except Exception as exc:  # pragma: no cover - UI defensive guard
             self._set_status(f"Failed to load dataset: {exc}")
             return
@@ -273,6 +420,7 @@ class CodexDataLabApp(App):
 
         try:
             df = preview_dataset(self.workspace, self._selected_dataset_id, max_rows=500, max_cols=50)
+            df = self._apply_filters(df)
         except Exception as exc:  # pragma: no cover
             panel.update(f"Stats unavailable: {exc}")
             return
@@ -316,6 +464,7 @@ class CodexDataLabApp(App):
             return
         try:
             df = preview_dataset(self.workspace, dataset_id, max_rows=1000, max_cols=100)
+            df = self._apply_filters(df)
         except Exception as exc:  # pragma: no cover
             self._set_status(f"Plot failed: {exc}")
             return
@@ -324,11 +473,23 @@ class CodexDataLabApp(App):
             x=plot_definition.get("x"),
             y=plot_definition.get("y"),
             category=plot_definition.get("category"),
+            fit=bool(plot_definition.get("fit", False)),
         )
         canvas = self.query_one("#plot-canvas", Static)
         canvas.update(render_plot(df, definition))
         meta = self.query_one("#plot-meta", Static)
-        meta.update(f"Dataset: {dataset_id}\nType: {definition.plot_type}")
+        meta.update(
+            f"Dataset: {dataset_id}\nType: {definition.plot_type}\nFit: {'on' if definition.fit else 'off'}"
+        )
+
+    def _render_active_plot(self) -> None:
+        if not self._selected_plot_id:
+            return
+        try:
+            definition = load_plot_definition(self.workspace, self._selected_plot_id)
+        except Exception:
+            return
+        self._render_plot(definition)
 
     def _append_chat(self, text: str) -> None:
         log = self.query_one("#chat-log", RichLog)
@@ -344,6 +505,7 @@ class CodexDataLabApp(App):
             "dataset_ids": [dataset_id] if dataset_id else [],
             "artifact_ids": [artifact_id] if artifact_id else [],
             "created_at": utc_now_iso(),
+            "project": self.workspace.project_id(),
         }
         self.workspace.save_answers(answers)
         if dataset_id:
@@ -362,15 +524,110 @@ class CodexDataLabApp(App):
             self._selected_dataset_id = event.item.id
             dataset_meta = self.query_one("#dataset-meta", Label)
             dataset_meta.update(f"Selected: {self._selected_dataset_id}")
+            self._refresh_filter_columns()
             self._refresh_table()
         elif event.list_view.id == "plot-list":
             if not event.item or not event.item.id:
                 return
             plot_id = event.item.id
+            self._selected_plot_id = plot_id
             definition = load_plot_definition(self.workspace, plot_id)
             self._render_plot(definition)
+        elif event.list_view.id == "recipe-list":
+            if not event.item or not event.item.id:
+                return
+            recipe_id = event.item.id
+            self._selected_recipe_id = recipe_id
+            try:
+                recipe = load_recipe(self.workspace, recipe_id)
+            except Exception:
+                return
+            meta = self.query_one("#recipe-meta", Static)
+            meta.update(
+                f"Recipe: {recipe_id}\n"
+                f"Dataset: {recipe.get('dataset_id')}\n"
+                f"Output: {recipe.get('output_column')}\n"
+                f"Expression: {recipe.get('expression')}"
+            )
+            self.query_one("#recipe-id", Input).value = recipe_id
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "project-create":
+            name = self.query_one("#project-new", Input).value.strip()
+            if not name:
+                self._set_status("Enter a project name.")
+                return
+            self.workspace.set_active_project(name)
+            self._refresh_project_select()
+            self._selected_dataset_id = None
+            self._refresh_dataset_list()
+            self._refresh_plot_list()
+            self._refresh_recipe_list()
+            self._load_summary()
+            self.query_one("#dataset-meta", Label).update("Selected: —")
+            self._set_status(f"Active project: {name}")
+            return
+        if event.button.id == "filter-apply":
+            column = self.query_one("#filter-column", Select).value
+            op = self.query_one("#filter-op", Select).value
+            value = self.query_one("#filter-value", Input).value.strip()
+            min_value = self.query_one("#filter-min", Input).value.strip()
+            max_value = self.query_one("#filter-max", Input).value.strip()
+            self._filter_state = {
+                "column": column,
+                "op": op,
+                "value": value,
+                "min": min_value,
+                "max": max_value,
+            }
+            self.workspace.update_ui_state("filters", self._filter_state)
+            self._refresh_table()
+            self._render_active_plot()
+            return
+        if event.button.id == "filter-clear":
+            self._filter_state = {}
+            self.workspace.update_ui_state("filters", self._filter_state)
+            self._apply_filter_state()
+            self._refresh_table()
+            self._render_active_plot()
+            return
+        if event.button.id == "recipe-create":
+            if not self._selected_dataset_id:
+                self._set_status("Select a dataset before creating a recipe.")
+                return
+            name = self.query_one("#recipe-name", Input).value.strip()
+            output_column = self.query_one("#recipe-output", Input).value.strip()
+            expression = self.query_one("#recipe-expr", Input).value.strip()
+            if not name or not output_column or not expression:
+                self._set_status("Recipe requires name, output column, and expression.")
+                return
+            try:
+                record = self.tool_harness.create_recipe(
+                    dataset_id=self._selected_dataset_id,
+                    name=name,
+                    output_column=output_column,
+                    expression=expression,
+                )
+            except Exception as exc:
+                self._set_status(f"Recipe create failed: {exc}")
+                return
+            self._refresh_recipe_list()
+            self._set_status(f"Recipe created: {record['recipe_id']}")
+            return
+        if event.button.id == "recipe-apply":
+            recipe_id = self.query_one("#recipe-id", Input).value.strip()
+            output_name = self.query_one("#recipe-output-name", Input).value.strip() or None
+            if not recipe_id:
+                self._set_status("Provide a recipe id to apply.")
+                return
+            try:
+                result = self.tool_harness.apply_recipe(recipe_id=recipe_id, output_name=output_name)
+            except Exception as exc:
+                self._set_status(f"Recipe apply failed: {exc}")
+                return
+            self._refresh_dataset_list()
+            self._set_status(f"Recipe output dataset: {result['dataset_id']}")
+            return
         if event.button.id == "plot-create":
             if not self._selected_dataset_id:
                 self._set_status("Select a dataset before plotting.")
@@ -378,25 +635,34 @@ class CodexDataLabApp(App):
             plot_type = self.query_one("#plot-type", Select).value or "scatter"
             x = self.query_one("#plot-x", Input).value.strip() or None
             y = self.query_one("#plot-y", Input).value.strip() or None
+            category = self.query_one("#plot-category", Input).value.strip() or None
+            fit_value = self.query_one("#plot-fit", Select).value
+            fit = fit_value == "linear"
             definition = create_plot_definition(
                 self.workspace,
                 dataset_id=self._selected_dataset_id,
                 plot_type=plot_type,
                 x=x,
                 y=y,
-                category=None,
+                category=category,
                 why=f"{plot_type} plot",
+                fit=fit,
             )
             self._render_plot(definition)
             self._refresh_plot_list()
             self._set_status(f"Plot created: {definition['id']}")
         elif event.button.id == "summary-refresh":
             summary = generate_summary_markdown(self.workspace)
-            summary_path = self.workspace.root / "results" / "summary.md"
+            summary_path = self.workspace.project_root() / "results" / "summary.md"
             summary_path.write_text(summary)
             summary_view = self.query_one("#summary-view", Markdown)
             summary_view.update(summary)
             self._set_status("Summary refreshed.")
+        elif event.button.id == "summary-export":
+            from .report_ops import export_report_notebook
+
+            result = export_report_notebook(self.workspace)
+            self._set_status(f"Report exported: {result['path']}")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "chat-input":
@@ -405,12 +671,43 @@ class CodexDataLabApp(App):
         event.input.value = ""
         if not message:
             return
+        if self._pending_confirm:
+            normalized = message.lower()
+            if normalized in {"y", "yes"}:
+                self._confirm_result = True
+            elif normalized in {"n", "no"}:
+                self._confirm_result = False
+            else:
+                self._append_chat("Please answer yes/no for the pending confirmation.")
+                return
+            if self._confirm_event is not None:
+                self._confirm_event.set()
+            self._append_chat(f"Confirmation: {'approved' if self._confirm_result else 'declined'}.")
+            return
         self._append_chat(f"You: {message}")
         self.run_worker(
             lambda: self._handle_chat_message_worker(message),
             exclusive=True,
             thread=True,
         )
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "project-select":
+            name = event.value
+            if name == "default":
+                self.workspace.set_active_project(None)
+            else:
+                self.workspace.set_active_project(str(name))
+            self._refresh_project_select()
+            self._selected_dataset_id = None
+            self._selected_plot_id = None
+            self._selected_recipe_id = None
+            self._refresh_dataset_list()
+            self._refresh_plot_list()
+            self._refresh_recipe_list()
+            self._load_summary()
+            self.query_one("#dataset-meta", Label).update("Selected: —")
+            self._set_status(f"Active project: {self.workspace.project or 'default'}")
 
     def _handle_chat_message_worker(self, message: str) -> None:
         response, artifact_id = self._handle_chat_message(message)
@@ -423,13 +720,37 @@ class CodexDataLabApp(App):
         if message.startswith("/help"):
             return (
                 "Commands: /datasets, /import <path>, /fetch_url <url>, /allow_domain <domain>, "
-                "/describe, /stats, /value_counts <col>, /groupby <col1,col2>",
+                "/projects, /project <name>, /transform_create <name>, /transform_run <path>, "
+                "/recipe_create <name> <column> <expression>, /recipe_apply <recipe_id> [output_name], "
+                "/report, /describe, /stats, /value_counts <col>, /groupby <col1,col2>",
                 None,
             )
         if message.startswith("/datasets"):
             datasets = list_datasets(self.workspace)
             lines = [f"{ds.get('id')} — {ds.get('name')}" for ds in datasets]
             return ("Datasets:\\n" + "\\n".join(lines) if lines else "No datasets.", None)
+        if message.startswith("/projects"):
+            projects = self.workspace.list_projects()
+            lines = ["default"] + projects
+            return ("Projects:\\n" + "\\n".join(lines), None)
+        if message.startswith("/project"):
+            parts = message.split(maxsplit=1)
+            name = parts[1].strip() if len(parts) > 1 else ""
+            if name.lower() == "default" or not name:
+                self.workspace.set_active_project(None)
+                self._refresh_project_select()
+                self._refresh_dataset_list()
+                self._refresh_plot_list()
+                self._refresh_recipe_list()
+                self.query_one("#dataset-meta", Label).update("Selected: —")
+                return ("Active project set to default.", None)
+            self.workspace.set_active_project(name)
+            self._refresh_project_select()
+            self._refresh_dataset_list()
+            self._refresh_plot_list()
+            self._refresh_recipe_list()
+            self.query_one("#dataset-meta", Label).update("Selected: —")
+            return (f"Active project set to {name}.", None)
         if message.startswith("/import"):
             parts = message.split(maxsplit=1)
             if len(parts) < 2:
@@ -462,6 +783,61 @@ class CodexDataLabApp(App):
             except Exception as exc:
                 return (f"Update failed: {exc}", None)
             return (f"Allowed domains: {', '.join(updated['allowed_domains'])}", None)
+        if message.startswith("/transform_create"):
+            parts = message.split(maxsplit=1)
+            if len(parts) < 2:
+                return ("Usage: /transform_create <name>", None)
+            if not self._selected_dataset_id:
+                return ("Select a dataset first.", None)
+            try:
+                record = self.tool_harness.create_transform(self._selected_dataset_id, parts[1])
+            except Exception as exc:
+                return (f"Transform create failed: {exc}", None)
+            return (f"Transform created at {record['transform_path']}.", None)
+        if message.startswith("/transform_run"):
+            parts = message.split(maxsplit=1)
+            if len(parts) < 2:
+                return ("Usage: /transform_run <path>", None)
+            try:
+                result = self.tool_harness.run_transform_by_path(parts[1])
+            except Exception as exc:
+                return (f"Transform run failed: {exc}", None)
+            self._refresh_dataset_list()
+            return (f"Transform outputs: {', '.join(result['output_dataset_ids'])}", None)
+        if message.startswith("/recipe_create"):
+            parts = message.split(maxsplit=3)
+            if len(parts) < 4:
+                return ("Usage: /recipe_create <name> <column> <expression>", None)
+            if not self._selected_dataset_id:
+                return ("Select a dataset first.", None)
+            name, column, expr = parts[1], parts[2], parts[3]
+            try:
+                record = self.tool_harness.create_recipe(
+                    dataset_id=self._selected_dataset_id,
+                    name=name,
+                    output_column=column,
+                    expression=expr,
+                )
+            except Exception as exc:
+                return (f"Recipe create failed: {exc}", None)
+            return (f"Recipe created {record['recipe_id']}.", None)
+        if message.startswith("/recipe_apply"):
+            parts = message.split(maxsplit=2)
+            if len(parts) < 2:
+                return ("Usage: /recipe_apply <recipe_id> [output_name]", None)
+            recipe_id = parts[1]
+            output_name = parts[2] if len(parts) > 2 else None
+            try:
+                result = self.tool_harness.apply_recipe(recipe_id=recipe_id, output_name=output_name)
+            except Exception as exc:
+                return (f"Recipe apply failed: {exc}", None)
+            self._refresh_dataset_list()
+            return (f"Recipe output dataset {result['dataset_id']}.", None)
+        if message.startswith("/report"):
+            from .report_ops import export_report_notebook
+
+            result = export_report_notebook(self.workspace)
+            return (f"Report exported: {result['path']}", None)
         if not self._selected_dataset_id:
             if self._codex_ready:
                 return self._ask_codex(message)
@@ -469,6 +845,7 @@ class CodexDataLabApp(App):
 
         try:
             df = preview_dataset(self.workspace, self._selected_dataset_id, max_rows=1000, max_cols=100)
+            df = self._apply_filters(df)
         except Exception as exc:  # pragma: no cover
             return f"Failed to load dataset: {exc}", None
         if message.startswith("/describe"):
@@ -529,6 +906,8 @@ class CodexDataLabApp(App):
         tool_context = self.tool_registry.format_for_prompt()
         if dataset_id:
             tool_context = f"{tool_context}\nSelected dataset id: {dataset_id}"
+        if self.workspace.project:
+            tool_context = f"{tool_context}\nActive project: {self.workspace.project}"
         try:
             response = self.codex_client.run_tool_loop(
                 message,
@@ -546,6 +925,12 @@ class CodexDataLabApp(App):
                 self.call_from_thread(self._refresh_dataset_list)
             if "plots" in result.effects:
                 self.call_from_thread(self._refresh_plot_list)
+            if "recipes" in result.effects:
+                self.call_from_thread(self._refresh_recipe_list)
+            if "projects" in result.effects:
+                self.call_from_thread(self._refresh_project_select)
+            if "reports" in result.effects:
+                self.call_from_thread(self._load_summary)
         return {
             "ok": result.ok,
             "result": result.result,
@@ -554,7 +939,7 @@ class CodexDataLabApp(App):
 
     def _save_result_artifact(self, kind: str, payload: dict) -> str:
         artifact_id = generate_id("res")
-        path = self.workspace.root / "results" / f"{artifact_id}.json"
+        path = self.workspace.project_root() / "results" / f"{artifact_id}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"kind": kind, "data": payload}, indent=2, sort_keys=True) + "\n")
         if self._selected_dataset_id:
@@ -564,3 +949,15 @@ class CodexDataLabApp(App):
             paths=[path.as_posix(), ".codexdatalab/lineage.json"],
         )
         return artifact_id
+
+
+def _parse_number(value: str | None) -> float | None:
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
